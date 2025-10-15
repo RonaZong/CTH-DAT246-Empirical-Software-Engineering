@@ -1,9 +1,0 @@
-Exercises W1
-
-{```{r}
-p_grid <- seq( from=0 , to=1 , length.out=100 )
-# likelihood of 3 water in 3 tosses
-likelihood <- dbinom( 3 , size=3 , prob=p_grid )
-
-samples <- sample(p , prob=posterior, size=le4, replace=TRUE)
-}

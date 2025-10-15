@@ -1,0 +1,87 @@
+# Exercises 1
+
+install.packages(c("coda","mvtnorm","devtools","loo","dagitty","shape"))
+devtools::install_github("stan-dev/cmdstanr")
+cmdstanr::install_cmdstan()
+devtools::install_github("rmcelreath/rethinking")
+
+---
+
+## 2.
+Recall the globe tossing model from the chapter. 
+Compute and plot the grid approximate posterior distribution 
+for each of the following sets of observations. 
+In each case, assume a uniform prior for p.
+
+
+```{r}
+# Create 100 evenly spaced values from 0 to 1
+p_grid <- seq( from=0 , to=1 , length.out=100 ) 
+```
+
+1. W,W,W
+```{r}
+# likelihood of 3 water in 3 tosses
+likelihood <- dbinom( 3 , size=3 , prob=p_grid )
+prior <- rep( 1 , 100 ) # uniform prior
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior) # standardize
+plot(posterior ~ p_grid, type="l")
+```
+
+2. W,W,W,L
+```{r}
+# likelihood of 3 water in 4 tosses
+likelihood <- dbinom( 3 , size=4 , prob=p_grid )
+prior <- rep( 1 , 100 ) # uniform prior
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior) # standardize
+plot(posterior ~ p_grid, type="l")
+```
+
+3. L,W,W,L,W,W,W
+```{r}
+# likelihood of 5 water in 7 tosses
+likelihood <- dbinom( 5 , size=7 , prob=p_grid )
+prior <- rep( 1 , 100 ) # uniform prior
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior) # standardize
+plot(posterior ~ p_grid, type="l")
+```
+
+## 3.
+Now assume a prior for p that is equal to zero when
+p < 0.5 and is a positive constant when p >= 0.5. Again compute and
+plot the grid approximate posterior distribution for each of the sets of
+observations in the problem just above.
+
+1. W,W,W
+```{r}
+p_grid <- seq( from=0 , to=1 , length.out=100 )
+# likelihood of 3 water in 3 tosses
+likelihood <- dbinom( 3 , size=3 , prob=p_grid )
+prior <- ifelse(p_grid < 0.5, 0, 1) # modified prior
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior) # standardize
+plot(posterior ~ p_grid, type="l")
+```
+
+2. W,W,W,L
+```{r}
+# likelihood of 3 water in 4 tosses
+likelihood <- dbinom( 3 , size=4 , prob=p_grid )
+prior <- ifelse(p_grid < 0.5, 0, 1) # modified prior
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior) # standardize
+plot(posterior ~ p_grid, type="l")
+```
+
+3. L,W,W,L,W,W,W
+```{r}
+# likelihood of 5 water in 7 tosses
+likelihood <- dbinom( 5 , size=7 , prob=p_grid )
+prior <- ifelse(p_grid < 0.5, 0, 1) # modified prior
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior) # standardize
+plot(posterior ~ p_grid, type="l")
+```
