@@ -1,3 +1,10 @@
+---
+title: "Exercise 1"
+author: "Rona Zong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
 # Exercises 1
 
 install.packages(c("coda","mvtnorm","devtools","loo","dagitty","shape"))
@@ -13,11 +20,19 @@ Compute and plot the grid approximate posterior distribution
 for each of the following sets of observations. 
 In each case, assume a uniform prior for p.
 
+Binomial Distribution:
+dbinom(k, size=n, prob=p) gives the probability of getting k successes in n trials with success probability p.
+
+We compute the likelihood - "how likely is the observed data for different values of p".
+Since we don't know the real p, we test many possible p from p_grid.
+For each p in p_grid, we compute the likelihood of observing the data (e.g., 3 water in 3 tosses).
+Then we multiply the likelihood by the prior to get the unstandardized posterior.
 
 ```{r}
 # Create 100 evenly spaced values from 0 to 1
 p_grid <- seq( from=0 , to=1 , length.out=100 ) 
 ```
+
 
 1. W,W,W
 ```{r}
@@ -85,3 +100,69 @@ posterior <- likelihood * prior
 posterior <- posterior / sum(posterior) # standardize
 plot(posterior ~ p_grid, type="l")
 ```
+
+## 4. Q&A
+
+1. What does it mean when we say “All models are wrong, but some are useful”?
+
+All models simplify reality, so they are never 100 % correct, 
+but they can still help us reason, predict, and learn about the world.
+
+2. What’s the difference between the frequentist and Bayesian view of probability?
+
+Frequentist: probability = long-run frequency of events.
+Bayesian: probability = degree of belief about something (how likely we think it is).
+
+3. In Bayesian thinking, what does the prior represent?
+
+The prior represents what we believe about a parameter (like p) before we see any data.
+
+4. What is the posterior, and how is it related to the likelihood and prior?
+
+Posterior ∝ Likelihood × Prior.
+It is proportional to the likelihood (how well the data supports different parameter values) times the prior.
+The posterior is our updated belief about the parameter after seeing the data.
+
+5. what does each number mean, and what is the result?
+dbinom(3, size = 3, prob = 0.5)
+
+This gives the probability of getting exactly 3 successes (e.g., heads) in 3 trials (e.g., coin flips) 
+when the probability of success on each trial is 0.5. The result is 0.125 (or 12.5%).
+
+6. Why do we multiply likelihood * prior in Bayesian updating?
+
+Because Bayes’ rule says that our new belief (posterior) is proportional to how well each hypothesis fits the data (likelihood) times how strongly we believed it before (prior).
+The multiplication combines old knowledge with new evidence.
+
+7. After we multiply likelihood and prior, why do we divide by sum(posterior)?
+
+To make the posterior a proper probability distribution—it must sum (or integrate) to 1.
+Dividing by sum(posterior) rescales the values so that all probabilities add up to 1.
+
+8. If you observed 3 heads out of 3 flips, what kind of p values will have the highest posterior probability?
+
+Large p values (close to 1).
+Those values make “3 heads in 3 flips” very likely, so the posterior curve peaks near p = 1.
+
+9. If you observed 1 head and 2 tails, how will the posterior shape change compared to 3 heads?
+
+It would shift toward smaller p values (around 0.3–0.4) because those make “1 out of 3” more likely.
+The distribution becomes lower near p = 1 and higher near p = 0.
+
+10. Why is Bayesian inference sometimes described as “learning from data”?
+
+Because we start with prior beliefs and update them using observed data to form a new belief (posterior).
+Each dataset teaches the model something new.
+
+11. What does it mean to “evaluate the model” in Bayesian workflow (design → condition → evaluate)?
+
+After fitting the model, we check whether it makes realistic predictions—using posterior predictive checks or comparison with actual data—to see if our assumptions were reasonable.
+
+12. Suppose your model’s predictions don’t match real data.
+What might that tell you about your prior or likelihood assumptions?
+
+Something is wrong with our assumptions—maybe the prior is unrealistic or the likelihood (data-generation story) is too simple.
+We should redesign the model or choose different priors.
+
+
+R hat, the trace box,

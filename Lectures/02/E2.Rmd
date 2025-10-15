@@ -1,9 +1,12 @@
 ---
-title: "Data Analysis Report"
+title: "Exercise 2"
 author: "Rona Zong"
-date: "2025-02-20"
+date: "`r Sys.Date()`"
 output: html_document
 ---
+
+# Exercises 2
+
 
 ## Introduction
 This is an example of an R Markdown document in VSCode
