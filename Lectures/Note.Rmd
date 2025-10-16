@@ -1,0 +1,109 @@
+---
+title: "Exam"
+author: "Rona Zong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 
+Binomial Distribution:
+dbinom(k, size=n, prob=p) gives the probability of getting k successes in n trials with success probability p.
+
+We compute the likelihood - "how likely is the observed data for different values of p".
+Since we don't know the real p, we test many possible p from p_grid.
+For each p in p_grid, we compute the likelihood of observing the data (e.g., 3 water in 3 tosses).
+Then we multiply the likelihood by the prior to get the unstandardized posterior.
+
+
+#
+In regression we separate outcome (the thing we want to predict) from predictors (the things we think influence outcome).
+We’ll write the likelihood for the outcome and a linear model for its mean.
+
+outcome - dependent variable - height
+predictor - independent variable - weight
+
+Gaussian regression model:
+$$\begin{aligned}
+height_i &\sim \text{Normal}(\mu_i, \sigma) \\
+\mu_i &= a + b \cdot (weight_i - \bar{weight}) \\
+a &\sim \text{Normal}(178, 20) \\
+b &\sim \text{Normal}(0, 10) \\
+\sigma &\sim \text{Uniform}(0, 50)
+\end{aligned}$$
+
+# Lecture 2
+DAG (Directed Acyclic Graph) is a graphical representation of causal relationships between variables.
+- Node: variable
+- Directed edge: causal influence from one variable to another
+- Acyclic: no feedback loops
+
+Symbols in DAG:
+- Fork: common cause (Confounder)
+- Pipe: causal chain (Mediator)
+- Collider: selection effect (Conditioning introduces bias)
+- Descendant: downstream variable of a collider or cause
+
+## Fork - Confounder
+A confounder is a variable that influences both the cause and the effect, creating a spurious association between them.
+A confounder can create a false impression of a causal relationship between the cause and effect,
+
+Cause: predictor (independent variable)
+Effect: outcome (dependent variable)
+
+X <- Z -> Y
+X: predictor (independent variable)
+Z: confounder
+Y: outcome (dependent variable)
+
+Z influences both X and Y. Z is a common cause, or confounder.
+If you don't control for Z, you'll find a spurious (fake) correlation between X and Y even if X doesn't cause Y.
+
+Z is not a mediator between X and Y.
+
+condition on Z to block the backdoor path and remove confounding.
+
+## Pipe - Mediator
+A mediator is a variable that lies on the causal path between a cause and an effect.
+
+X -> M -> Y
+X: predictor (independent variable)
+M: mediator
+Y: outcome (dependent variable)
+
+M transmits part of the causal influence of X on Y, which is an indirect effect, 
+whereas the direct effect is the influence of X on Y that is not transmitted through M.
+
+Don’t condition on M if you want the total effect.
+Condition on M if you only want the direct effect.
+
+## Collider - Selection Bias
+A Collider is a variable that is influenced by two other variables.
+
+X -> C <- Y
+X: predictor (independent variable)
+C: collider
+Y: outcome (dependent variable)
+
+Normally, X and Y are independent.
+But if you condition on C, they become correlated - a spurious correlation created by conditioning.
+
+Never condition on a collider, or any of its descendants, because it introduces bias.
+
+
+## Descendant
+A descendant is any variable that is downstream of a collider or cause.
+
+X -> C <- Y
+     ↓
+     D
+X: predictor (independent variable)
+C: collider
+Y: outcome (dependent variable)
+D is a descendant of collider C, it inherits C's properties.
+If C is a collider, conditioning on its descendant also opens a path and causes bias.
+
+
+
+
+
+

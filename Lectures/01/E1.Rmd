@@ -20,19 +20,10 @@ Compute and plot the grid approximate posterior distribution
 for each of the following sets of observations. 
 In each case, assume a uniform prior for p.
 
-Binomial Distribution:
-dbinom(k, size=n, prob=p) gives the probability of getting k successes in n trials with success probability p.
-
-We compute the likelihood - "how likely is the observed data for different values of p".
-Since we don't know the real p, we test many possible p from p_grid.
-For each p in p_grid, we compute the likelihood of observing the data (e.g., 3 water in 3 tosses).
-Then we multiply the likelihood by the prior to get the unstandardized posterior.
-
 ```{r}
 # Create 100 evenly spaced values from 0 to 1
 p_grid <- seq( from=0 , to=1 , length.out=100 ) 
 ```
-
 
 1. W,W,W
 ```{r}

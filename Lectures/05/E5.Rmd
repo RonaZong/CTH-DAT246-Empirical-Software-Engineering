@@ -1,0 +1,31 @@
+---
+title: "Exercise 5"
+author: "Rona Zong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1.
+G - Gender
+D - Discipline
+A - Awards
+
+G -> A
+G -> D -> A
+
+G: predictor (independent variable)
+D: mediator
+A: outcome (dependent variable)
+
+Total effect of G on A without conditioning on mediator D.
+Direct effect of G on A conditioning on mediator D.
+
+```{r}
+library(rethinking)
+data("NWOGrants")
+d <- NWOGrants
+str(d)
+```
+
+
+
