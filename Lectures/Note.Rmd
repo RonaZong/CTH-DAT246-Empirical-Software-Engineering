@@ -17,7 +17,7 @@ Then we multiply the likelihood by the prior to get the unstandardized posterior
 
 #
 In regression we separate outcome (the thing we want to predict) from predictors (the things we think influence outcome).
-We’ll write the likelihood for the outcome and a linear model for its mean.
+We'll write the likelihood for the outcome and a linear model for its mean.
 
 outcome - dependent variable - height
 predictor - independent variable - weight
@@ -73,7 +73,7 @@ Y: outcome (dependent variable)
 M transmits part of the causal influence of X on Y, which is an indirect effect, 
 whereas the direct effect is the influence of X on Y that is not transmitted through M.
 
-Don’t condition on M if you want the total effect.
+Don't condition on M if you want the total effect.
 Condition on M if you only want the direct effect.
 
 ## Collider - Selection Bias
@@ -103,7 +103,36 @@ D is a descendant of collider C, it inherits C's properties.
 If C is a collider, conditioning on its descendant also opens a path and causes bias.
 
 
+# Lecture 3
+
+## Normal Distribution 正态分布
+The normal distribution is a continuous probability distribution characterized by its mean (average) and standard deviation (spread). 
+It is symmetric around the mean, with most values clustering around the mean and fewer values appearing as you move away from it.
+
+dnorm(x, mean=μ, sd=σ) gives the probability density of x in a normal distribution with mean μ and standard deviation σ.
+
+outcome - dependent variable - continuous and unbounded
+predictor - independent variable - continuous
+
+Use on continuous data that can take any value within a range.
+
+## Poisson Distribution 泊松分布
+The Poisson distribution models the number of events occurring within a fixed interval of time or space, given a known average rate of occurrence.
+
+dpois(k, lambda=λ) gives the probability of observing k events in an interval when the average rate is λ.
+
+outcome - dependent variable - count data (0, 1, 2, ...)
+predictor - independent variable - rate of occurrence
+
+Uses on count data with no upper bound.
 
 
+## Binomial Distribution 二项分布
+The binomial distribution models the number of successes in a fixed number of independent Bernoulli trials, each with the same probability of success.
 
+dbinom(k, size=n, prob=p) gives the probability of getting k successes in n trials with success probability p.
 
+outcome - dependent variable - number of successes - bounded between 0 and n
+predictor - independent variable - probability of success
+
+Use on bonary or proportion data with a known number of trials.

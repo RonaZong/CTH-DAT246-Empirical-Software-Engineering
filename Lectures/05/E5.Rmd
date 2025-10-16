@@ -18,14 +18,46 @@ D: mediator
 A: outcome (dependent variable)
 
 Total effect of G on A without conditioning on mediator D.
+
+```{r setup, include=FALSE}
+library(rethinking)
+data(NWOGrants)
+d <- NWOGrants
+dat_list <- list(
+  awards = as.integer(d$awards),
+  apps = as.integer(d$applications),
+  gid = ifelse( d$gender == "m", 1L, 2L))
+ml_total <- ulam(
+    alist(
+        awards ~ binomial(apps, p),
+        logit(p) <- a[gid], 
+        a[gid] ~ normal(-1, 1) # Only gender is included as predictor -> this captures total effect (direct + indirect)
+    ), data = dat_list, chains = 4)
+precis(ml_total, 2)
+```
+
+```{r}
+post <- extract.samples(ml_total)
+diff <- inv_logit(post$a[,1]) - inv_logit(post$a[,2])
+precis(list(diff=diff))
+```
+
 Direct effect of G on A conditioning on mediator D.
 
 ```{r}
-library(rethinking)
-data("NWOGrants")
-d <- NWOGrants
-str(d)
+dat_list$disc <- as.integer(d$discipline)
+m1_direct <- ulam(
+    alist(
+        awards ~ binomial( apps , p ),
+        logit(p) <- a[gid] + d[disc],
+        a[gid] ~ normal(-1,1),
+        d[disc] ~ normal(0,1) # control for discipline D
+    ),data=dat_list , chains=4 , cores=4 , cmdstan=TRUE )
+precis(m1_direct ,2)
 ```
 
-
-
+```{r}
+post <- extract.samples(m1_direct)
+diff_a <- post$a[,1] - post$a[,2]
+precis( list( diff_a=diff_a ) )
+```
