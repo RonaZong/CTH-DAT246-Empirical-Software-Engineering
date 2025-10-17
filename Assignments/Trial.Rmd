@@ -1,52 +1,3 @@
----
-title: "Assignment: AI-assisted Code Reviews"
-author: "Xingrong Zong"
-date: "`r Sys.Date()`"
-output: html_document
----
-
-# 1. Case Description
-
-At a software development company, some engineers have started to use artificial intelligence (AI) tools to support their code review (CR) activity. 
-The company wants to understand whether AI-supported CRs have an effect on the (1) extent and (2) quality of their CRs.
-
-The company has collected records of the resulting CRs’ extent (i.e., their length in number of characters), their quality (assessed by experts on a 1-5 scale), but analyzing the impact is not trivial. 
-Some CRs apply to code on more complex issues, others on simpler issues, which might distort the effect. 
-The company has no control over who uses AI for CR, but younger engineers are much more open to using AI tools. 
-Older engineers are adamant that the defining factor for concise and high-quality CRs is skill, and skill only comes with time.
-
-The aversion also manifests in how these CRs are perceived: Previously, engineers assumed that whether a CR was considered relevant for making a decision (e.g., whether to approve a pull request or not) depended only on how extensive and how high quality it was. 
-But recently, a clear aversion against AI-assisted CRs is notable, as AI-written CRs are categorically discarded more often.
-
----
-
-# 2. Data Description
-
-The company has collected data on 500 code reviews, with the following variables:
-- `age`: Age of the reviewer in number of years.
-- `skill`: Skill of a reviewer measured on a continuous scale.
-- `used.cr.technology`: Whether the reviewer uses AI-support during code review (1) or not(0).
-- `complexity`: Relative complexity of the code change to be reviewed. 
-- `extent`: Number of characters in the code review.
-- `quality`: Subjective quality of the code review as assessed by experts (where 1 is bad and 5 good quality).
-- `result`: Whether the code review contributed to making a decision on the pull request (1) or not (0).
-
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-library(dagitty)
-library(ggdag)
-library(rethinking)
-library(dplyr)
-```
-
-Make sure using the same **R session** that has:
-```{r}
-options(mc.cores = parallel::detectCores())
-rstan_options(auto_write = TRUE)
-```
-
 ```{r data-prep}
 reviewer <- read.csv("Assignments/reviewers.csv")
 str(reviewer) # check format
@@ -78,29 +29,7 @@ df <- df %>%
 str(df)
 ```
 
-## 1. Causal assumptions and DAGs
-
-Below I formalize two plausible causal diagrams (DAGs) for how `used.cr.technology` may affect the outcomes of interest: `extent` and `quality`.
-All relevant outcome variables: extent, quality, and result.
-
-DAG 1 (Direct `used.cr.technology` Influence on `extent` and `quality`):
-`used.cr.technology` directly imrpoves both review `extent` and `quality`, possibly confounded / moderated by skill and issue complexity.
-- `used.cr.technology` -> `extent` -> `result`
-- `used.cr.technology` -> `quality` -> `result`
-- `skill` -> `quality`
-- `complexity` -> `extent`
-- `age` -> `skill` -> `quality`
-
 ```{r}
-dag1 <- dagitty("dag {
-    used.cr.technology -> extent
-    used.cr.technology -> quality
-    extent -> result
-    quality -> result
-    skill -> quality
-    complexity -> extent
-    age -> skill
-}")
 
 # coordinates(dag1) <- list(
 #   x = c(used.cr.technology=0, age=0, skill=1, complexity=1, extent=2, quality=2, result=3),

@@ -15,7 +15,7 @@ For each p in p_grid, we compute the likelihood of observing the data (e.g., 3 w
 Then we multiply the likelihood by the prior to get the unstandardized posterior.
 
 
-#
+# Outcome vs Predictor
 In regression we separate outcome (the thing we want to predict) from predictors (the things we think influence outcome).
 We'll write the likelihood for the outcome and a linear model for its mean.
 
@@ -23,6 +23,12 @@ outcome - dependent variable - height
 predictor - independent variable - weight
 
 Gaussian regression model:
+with mean $$\mu_i$$ and standard deviation $$\sigma$$:
+$$\y_i$$ ~ Normal($$\mu_i$$, $$\sigma$$) (likelihood for outcome)
+$$\mu_i$$ = $$\alpha + \beta x_i$$ (linear model for mean)
+Priors like $$\alpha$$ ~ Normal(?, ?), $$\beta$$ ~ Normal(?, ?), $$\sigma$$ ~ Exponential(?) (Or Uniform) set our basseline beliefs.
+
+
 $$\begin{aligned}
 height_i &\sim \text{Normal}(\mu_i, \sigma) \\
 \mu_i &= a + b \cdot (weight_i - \bar{weight}) \\
