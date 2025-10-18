@@ -1,0 +1,82 @@
+---
+title: "Exercise 6"
+author: "Rona Zong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1.
+```{r}
+# where is the file?
+url <- "https://torkar.github.io/desharnais.csv"
+# where should we place the file?
+destFile <- "~/Downloads/desharnais.csv"
+# d/l file
+download.file(url, destFile)
+# read the file into d
+d <- read.csv("~/Downloads/desharnais.csv")
+# remove columns we don't need
+d <- d[-c(1)]
+str(d) # check format
+```
+'data.frame':   77 obs. of  4 variables:
+ $ Effort    : int  5152 5635 805 3829 2149 2821 2569 3913 7854 2422 ...
+ $ TeamExp   : int  2 1 5 1 1 1 3 2 4 4 ...
+ $ ManagerExp: int  5 1 5 1 1 1 2 3 2 5 ...
+ $ Language  : int  1 1 1 1 1 1 2 1 1 1 ...
+
+
+```{r}
+d$ManagerExp_s <- scale(d$ManagerExp)
+d$TeamExp_s <- scale(d$TeamExp)
+```
+
+```{r}
+d <- read.csv("https://torkar.github.io/data -RBS.csv")
+str(d) # check format
+# make to a list so we can add alpha below
+d <- as.list(d)
+# add alpha values for Dirichlet
+d$alpha <- c(2,2,2)
+```
+
+```{r}
+library(dagitty)
+dag <- dagitty("dag{
+    E <- L
+    E <- T -> L
+    E <- M -> L
+}")
+coordinates(dag) <- list( x=c(E=1,L=1,T=0,M=2) ,
+y=c(E=0,L=-1,T=-1,M=-1) )
+drawdag(dag)
+```
+
+```{r}
+library(rethinking)
+m0 <- ulam(alist(
+    Effort ~ dgampois(lambda , phi),
+    log(lambda) <- a[Language],
+    a[Language] ~ dnorm(0,0.5),
+    phi ~ dexp(1)
+    ), data = d, cores = 4, chains = 4, iter = 5e3
+)
+```
+
+```{r}
+m1 <- ulam(
+    alist(
+        Effort ~ dgampois(lambda ,phi),
+        log(lambda) <- a_l[Language] +
+        a_t * TeamExp_s + a_m * ManagerExp_s ,
+        a_l[Language] ~ dnorm(0,0.5),
+        a_t ~ dnorm(0,0.5),
+        a_m ~ dnorm(0,0.5),
+        phi ~ dexp(1)
+    ), data = d, cores = 4, chains = 4, iter = 5e3
+)
+```
+
+# 2.
+
+# 3.

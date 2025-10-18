@@ -39,38 +39,6 @@ options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 ```
 
-```{r data-prep}
-reviewers <- read.csv("Assignments/reviewers.csv")
-str(reviewers) # check format
-reviewers <- as.list(reviewers) # make to a list so we can add alpha below
-
-reviews <- read.csv("Assignments/reviews.csv")
-str(reviews) # check format
-reviews <- as.list(reviews) # make to a list so we can add alpha below
-
-# Merge datasets
-df <- merge(reviews, reviewers, by = "reviewer_id")
-glimpse(df)
-
-# Rename variables for Stan compatibility
-df <- df %>%
-    rename(
-        used_cr_technology = used.cr.technology,
-    )
-
-# Standardize predictors
-df <- df %>%
-    mutate(
-        age_s = scale(age),
-        skill_s = scale(skill),
-        complexity_s = scale(complexity),
-        extent_s = scale(extent),
-        quality_s = scale(quality)
-    )
-
-str(df)
-```
-
 ### DAG 1：
 Selection + Confounding + Mediation
 - `age` -> `skill` (older reviewers are usually more experienced and skilled)
@@ -173,24 +141,54 @@ coord_equal()
 ```
 
 ```{r adjustment-sets}
-adjustmentSets(dag1, exposure = "used_cr_technology", outcome = "result")
-adjustmentSets(dag2, exposure = "used_cr_technology", outcome = "result")
+adjustmentSets(dag1, exposure = "A", outcome = "R")
+adjustmentSets(dag2, exposure = "A", outcome = "R")
 ```
 
 Viability discussion. 
 Compare which back-door paths need blocking and what each adjustment set implies (e.g., in DAG 1, include Age, Skill, Complexity to estimate AI’s effect; if you include Extent/Quality you move from total to direct effect). 
 Tie your reasoning to the collider/mediator logic practiced in E3 (information, K–L, thinking carefully about model vs. data) and E5 (mediation pipes).
 
+---
+
 ## Descriptive Statistics & Visualizations
 
 Follow the standardize/visualize patterns from E2/E4:
-
 Summaries and correlations (extent/quality/complexity/age/skill/AI/result).
-
 Visuals: scatter (Extent vs Complexity), outcome by AI (box/scatter), approval rates by AI.
-
 Normalize extent/quality where helpful; keep raw scales visible for interpretability.
 
+```{r data-prep}
+# reviewers <- read.csv("Assignments/reviewers.csv")
+# str(reviewers) # check format
+# reviewers <- as.list(reviewers) # make to a list so we can add alpha below
+
+# reviews <- read.csv("Assignments/reviews.csv")
+# str(reviews) # check format
+# reviews <- as.list(reviews) # make to a list so we can add alpha below
+
+# Merge datasets
+# df <- merge(reviews, reviewers, by = "reviewer_id")
+# glimpse(df)
+
+# Rename variables for Stan compatibility
+# df <- df %>%
+#     rename(
+#         used_cr_technology = used.cr.technology,
+#     )
+
+# Standardize predictors
+# df <- df %>%
+#     mutate(
+#         age_s = scale(age),
+#         skill_s = scale(skill),
+#         complexity_s = scale(complexity),
+#         extent_s = scale(extent),
+#         quality_s = scale(quality)
+#     )
+```
+
+Load files:
 ```{r descriptives, fig.height=5, fig.width=7}
 reviewers <- read_csv("Assignments/reviewers.csv")
 reviews   <- read_csv("Assignments/reviews.csv")
@@ -199,16 +197,45 @@ reviews   <- read_csv("Assignments/reviews.csv")
 head(reviewers)
 head(reviews)
 ```
+  reviewer.id   age skill used.cr.technology
+        <dbl> <dbl> <dbl>              <dbl>
+1           1    51  4.25                  0
+2           2    55  3.74                  0
+3           3    49  4.46                  0
+4           4    38  3.83                  0
+5           5    44  4.18                  0
+6           6    27  2.66                  1
 
+  reviewer.id review.id complexity result extent quality
+        <dbl>     <dbl>      <dbl>  <dbl>  <dbl>   <dbl>
+1           1       623      0.367      1    229       3
+2           1      1381      0.490      1    184       3
+3           1       673     -1.40       0    126       3
+4           1       136      0.545      0    183       3
+5           1        35     -0.882      0    169       3
+6           1       749      0.919      1    179       4
+
+Merge tha tables:
 ```{r}
 df <- reviews %>%
   left_join(reviewers, by = "reviewer.id")
 
 # quick structure check
 glimpse(df)
-
 ```
+Rows: 2,000
+Columns: 9
+$ reviewer.id        <dbl> 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, …
+$ review.id          <dbl> 623, 1381, 673, 136, 35, 749, 626, 620, 495, 1136, …
+$ complexity         <dbl> 3.669993e-01, 4.899597e-01, -1.396837e+00, 5.453157…
+$ result             <dbl> 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, …
+$ extent             <dbl> 229, 184, 126, 183, 169, 179, 299, 257, 167, 320, 1…
+$ quality            <dbl> 3, 3, 3, 3, 3, 4, 3, 4, 4, 4, 3, 3, 3, 4, 3, 3, 5, …
+$ age                <dbl> 51, 51, 51, 51, 51, 51, 51, 55, 55, 55, 55, 55, 55,…
+$ skill              <dbl> 4.254235, 4.254235, 4.254235, 4.254235, 4.254235, 4…
+$ used.cr.technology <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
 
+Create Key Variables:
 ```{r}
 df <- df %>%
     mutate(
@@ -217,21 +244,184 @@ df <- df %>%
     )
 ```
 
+Model:
+```{r}
+m1_total <- glm(result ~ usd.cr.technology + age + skill + complexity,
+                data = df, family = binomial(link = "logit"))
+```
+
+Direct effect:
+```{r}
+m2_direct <- glm(result ~ usd.cr.technology + age + skill + complexity + extent + quality,
+                 data = df, family = binomial(link = "logit"))
+```
+
+Descriptive Statistics:
+Overall summaries:
 ```{r}
 skim(df %>% select(extent, quality, complexity, age, skill))
 ```
+── Variable type: numeric ──────────────────────────────────────────────────────
+  skim_variable n_missing complete_rate     mean     sd     p0     p25      p50
+1 extent                0             1 191.     72.2   34     139     180
+2 quality               0             1   3.41    0.642  1       3       3
+3 complexity            0             1  -0.0383  0.990 -3.06   -0.705  -0.0308
+4 age                   0             1  40.1     9.83  20      33      41
+5 skill                 0             1   3.61    0.802  0.419   3.22    3.74  
+      p75   p100 hist
+1 236     538    ▃▇▃▁▁
+2   4       5    ▁▁▇▇▁
+3   0.628   3.36 ▁▅▇▃▁
+4  48      62    ▃▅▇▅▂
+5   4.17    4.92 ▁▁▂▇▆
+
+Groupwise summaries by AI usage:
+```{r}
+df %>%
+  group_by(ai_user) %>%
+  summarise(
+    mean_extent = mean(extent, na.rm = TRUE),
+    mean_quality = mean(quality, na.rm = TRUE),
+    mean_complexity = mean(complexity, na.rm = TRUE),
+    approval_rate = mean(approved, na.rm = TRUE),
+    n = n()
+  )
+```
+  ai_user mean_extent mean_quality mean_complexity approval_rate     n
+    <int>       <dbl>        <dbl>           <dbl>         <dbl> <int>
+1       0        180.         3.48         -0.0605         0.589   917
+2       1        200.         3.35         -0.0195         0.404  1083
+
+Visualizations:
+Extent vs Complexity:
+```{r}
+ggplot(df, aes(x = complexity, y = extent)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Extent vs Complexity",
+       x = "Complexity of code review",
+       y = "Extent (characters)") +
+  theme_minimal()
+```
+
+Quality by AI usage
+```{r}
+ggplot(df, aes(x = factor(ai_user, labels = c("No AI", "AI")), y = quality)) +
+  geom_boxplot() +
+  labs(title = "Quality by AI usage",
+       x = "Used code review technology",
+       y = "Quality rating") +
+  theme_minimal()
+```
+
+Approval Rate by AI usage
+```{r}
+df %>%
+  group_by(ai_user) %>%
+  summarise(approval_rate = mean(approved, na.rm = TRUE)) %>%
+  ggplot(aes(x = factor(ai_user, labels = c("No AI", "AI")), y = approval_rate)) +
+  geom_col(fill = "steelblue") +
+  ylim(0,1) +
+  labs(title = "Approval rate by AI usage",
+       x = "Used code review technology",
+       y = "Approval rate") +
+  theme_minimal()
+```
+
+Correlation matrix
+```{r}
+df %>%
+  select(extent, quality, complexity, age, skill, ai_user, approved) %>%
+  cor(use = "complete.obs") %>%
+  round(3)
+```
+           extent quality complexity    age  skill ai_user approved
+extent      1.000  -0.261      0.692 -0.272 -0.337   0.140    0.379
+quality    -0.261   1.000     -0.144  0.371  0.496  -0.098    0.148
+complexity  0.692  -0.144      1.000 -0.026 -0.019   0.021    0.441
+age        -0.272   0.371     -0.026  1.000  0.776  -0.413    0.104
+skill      -0.337   0.496     -0.019  0.776  1.000  -0.345    0.109
+ai_user     0.140  -0.098      0.021 -0.413 -0.345   1.000   -0.184
+approved    0.379   0.148      0.441  0.104  0.109  -0.184    1.000
+
+```{r}
+vars <- df %>% 
+  select(extent, quality, complexity, age, skill, used.cr.technology, approved)
+
+cor_mat <- cor(vars, use = "complete.obs")
+round(cor_mat, 2)
+```
+
+```{r}
+# Compute significance (p-values)
+cor_test <- cor.mtest <- function(mat, conf.level = 0.95) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], conf.level = conf.level)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+      lowCI.mat[i, j] <- lowCI.mat[j, i] <- tmp$conf.int[1]
+      uppCI.mat[i, j] <- uppCI.mat[j, i] <- tmp$conf.int[2]
+    }
+  }
+  list(p = p.mat, lowCI = lowCI.mat, uppCI = uppCI.mat)
+}
+
+p.mat <- cor_test(vars)$p
+```
+
+```{r}
+library(ggcorrplot)
+
+ggcorrplot(cor_mat,
+           hc.order = TRUE,          # hierarchical clustering order
+           type = "lower",           # show only lower triangle
+           lab = TRUE,               # show correlation values
+           p.mat = p.mat,            # add significance info
+           sig.level = 0.05,         # mark significant correlations
+           insig = "blank",          # hide non-significant
+           colors = c("red", "white", "blue"),
+           title = "Correlation Matrix of Key Variables",
+           lab_size = 3) +
+  theme_minimal()
+```
+
+```{r}
+cor_filtered <- cor_mat
+cor_filtered[abs(cor_filtered) < 0.3] <- NA
+
+ggcorrplot(cor_filtered,
+           type = "lower",
+           lab = TRUE,
+           colors = c("red", "white", "blue"),
+           title = "Strong Correlations (|r| > 0.3)") +
+  theme_minimal()
+
+```
+Table X presents the correlation matrix of the key variables.
+The results reveal strong positive associations between complexity and extent (r = 0.69) and between age and skill (r = 0.78).
+Skill also correlates with quality (r = 0.50), suggesting that more experienced reviewers tend to produce higher-quality feedback.
+Negative correlations between ai_user and both age (r = –0.41) and skill (r = –0.35) indicate that younger, less-experienced reviewers are more likely to use AI technology.
+The approval rate is moderately correlated with extent (r = 0.38) and complexity (r = 0.44), while showing a weak negative correlation with AI usage (r = –0.18).
+These findings support the inclusion of complexity, extent, age, skill, and AI usage as key variables in the causal models of Task 3.
+
+
+
+The dataset contains 200 reviewers and 2000 reviews.
+The mean extent is X, with higher values for complex reviews.
+Non-AI reviewers have an average approval rate of ≈ 0.59, while AI users’ approval rate is ≈ 0.40.
+Skill and age correlate positively with quality (r ≈ 0.5 and 0.37 respectively), indicating more experienced reviewers write higher-quality comments.
+Complexity and extent are strongly correlated (r ≈ 0.69).
+
 
 ## Statistical Modeling
-
 ### Option (a): 1 DAG → 1 model per outcome
-
 Extent (continuous): linear model (or Student-t if heavy tails):
-
 Extent_𝑖 ∼ 𝑁 (𝜇_𝑖, 𝜎), 𝜇_𝑖 = 𝛼 + 𝛽_AI * AI_𝑖 + 𝛽_𝑐 * Complexity_𝑖 + 𝛽_𝑎 * Age_𝑖 + 𝛽_𝑠 * Skill_𝑖.
-
 (E2 shows linear regression workflow; E4 suggests adding varying intercepts by reviewer if you want a multilevel version.)
-
-
+ 
 Quality (ordered 1–5): ordered logistic/probit:
 
 Pr(Quality_𝑖 ≤ 𝑘) = logit*(−1) * (𝜏_𝑘 − 𝜂_𝑖), 𝜂_𝑖 = 𝛾_0 + 𝛾_AI * AI_𝑖 + 𝛾_𝑐 * Complexity_𝑖 + 𝛾_𝑎 * Age_𝑖 + 𝛾_𝑠 * Skill_𝑖.

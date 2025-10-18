@@ -35,12 +35,19 @@ ml_total <- ulam(
     ), data = dat_list, chains = 4)
 precis(ml_total, 2)
 ```
+      mean   sd  5.5% 94.5% rhat ess_bulk
+a[1] -1.54 0.06 -1.64 -1.43    1  1235.63
+a[2] -1.74 0.08 -1.87 -1.61    1  1366.46
 
 ```{r}
 post <- extract.samples(ml_total)
 diff <- inv_logit(post$a[,1]) - inv_logit(post$a[,2])
 precis(list(diff=diff))
 ```
+
+'data.frame': 2000 obs. of 1 variables:
+     mean   sd 5.5% 94.5%  histogram
+diff 0.03 0.01 0.01  0.05 ▁▁▂▅▇▇▃▁▁▁
 
 Direct effect of G on A conditioning on mediator D.
 
@@ -55,9 +62,25 @@ m1_direct <- ulam(
     ),data=dat_list , chains=4 , cores=4 , cmdstan=TRUE )
 precis(m1_direct ,2)
 ```
+      mean   sd  5.5% 94.5% rhat ess_bulk
+a[1] -1.38 0.33 -1.90 -0.86 1.03   163.10
+a[2] -1.51 0.33 -2.04 -0.99 1.03   167.78
+d[1]  0.36 0.37 -0.23  0.95 1.02   216.74
+d[2]  0.03 0.35 -0.53  0.58 1.02   186.68
+d[3] -0.20 0.35 -0.76  0.34 1.02   182.57
+d[4] -0.24 0.38 -0.85  0.36 1.01   221.25
+d[5] -0.30 0.34 -0.84  0.25 1.02   179.12
+d[6]  0.02 0.37 -0.57  0.59 1.02   202.16
+d[7]  0.33 0.39 -0.29  0.95 1.02   215.57
+d[8] -0.42 0.34 -0.96  0.11 1.03   173.50
+d[9] -0.17 0.36 -0.76  0.39 1.02   195.51
+
 
 ```{r}
 post <- extract.samples(m1_direct)
 diff_a <- post$a[,1] - post$a[,2]
 precis( list( diff_a=diff_a ) )
 ```
+'data.frame': 2000 obs. of 1 variables:
+       mean   sd  5.5% 94.5% histogram
+diff_a 0.14 0.11 -0.03  0.31  ▁▂▅▇▅▁▁▁
