@@ -10,9 +10,11 @@ output: html_document
 - Multilevel Models 多层模型: hadling repeated or hierarchical data with partial pooling 部分汇聚.
 - Graphical Causal Models (DAGs 因果图): to reason about cause and effect.
 - Backend engine for Bayesian computation using MCMC (Markov Chain Monte Carlo): a way to sample from the posterior distribution.
+
 ---
 
-# Perfect Models
+# 1. Perfect Models
+
 The philosophy: "All models are wrong, but some are useful."
 - Any model is just a simplification of reality.
 - Reality is too complex to capture perfectly.
@@ -20,38 +22,112 @@ The philosophy: "All models are wrong, but some are useful."
 
 -> Find the most useful model for the question and data we have.
 
+## Model
 A model is a mathematical representation of how you believe data are generated.
 Think of it as a structured assumption about the world.
 
 $$\begin{aligned}
-\alpha = intercept (baseline)
-\beta = slope
-\sigma = resudual variation (noise)
+y_i ~ Normal (\mu_i, \sigma)
+\mu_i = predicted mean
+\sigma = scatter of the points around \mu
+Large \sigma -> high scatter -> model fits less tightly
+Small \sigma -> low scatter -> model fits more tightly
 \end{aligned}$$
 
+$$\begin{aligned}
+\mu_i = \alpha + \beta x predictor
+\alpha = intercept (baseline)
+\beta = slope
+\sigma = residual variation (noise)
+\end{aligned}$$
 
+### Residual Variation (Noise):
+
+When we build a model, we try to predict the mean outcome - usually called mu, but real data almost never fit perfectly.
+There is always randomness we cannot explain.
+That randomness is called residual variation or noise.
+
+If you plot it:
+- The solid line is μ — the models expected value.
+- The dots are real data points.
+- The vertical distance from a dot to the line is the residual (残差).
+
+$$\begin{aligned}
+residual_i = y_i - \mu_i
+\end{aligned}$$
+→ It measures how far the observation is from what the model predicts.
+
+Relationship between \mu and \sigma (residuals):
+- mu explains the systematic part of data.
+- residuals explain the random part.
+- together, they make up the total data variation.
+If residuals are large -> model is missing something important.
+If resiguals are small -> model fits the data well.
 
 ## The Bayesian Framework
+
 We update our belief (prior 先验) in light of new data (likelihood 似然), producing updated belief (posterior 后验):
+
 Posterior is proportional to Likelihood X Prior
 
 ### Bayes's theorem
 
 | Term       | Meaning                                 |
-|------------|----------------------------------------:|
+|------------|-----------------------------------------|
 | Prior      | What we believed before seeing data     |
 | Likelihood | How likely the data are given our model |
 | Posterior  | Updated belief after seeing data        |
 
-Or produce a table from R using knitr:
 
 ### Comparison: Frequentist vs Bayesian
+
 | Frequjentist 频率学派               | Bayesian 贝叶斯学派                     |
+|------------------------------------|----------------------------------------|
 | Probability = long-run frequency   | Probability = degree of belief         |
 | Parameters are fixed, data vary    | Parameters are random, data fixed      | 
 | Output: point estimates + p-values | Output: full probability distributions |
 | Example: mean = 3.2 +- 0.1         | Example: mean is probably around 3.2   |
 
+### P-Value
+
+P-value is the probability of obtaining results as extreme or more extreme than what you observed, givem that the null hypothesis H_0 is true.
+If p < 0.05 -> Data are unlikely under H_0 -> reject H_0
+If p > 0.05 -> data are not surprising under H_0 -> fail to reject H_0
+
+
+## Q&A
+1. In Bayesian data analysis, what does the equation
+Posterior ∝ Likelihood X Prior mean in words?
+
+→ Explain the meaning of posterior 后验, likelihood 似然, and prior 先验.
+
+Posterior is proportional to Likelihood multiplies by Prior.
+Prior - what we believe about the parameter before we seeing the data,
+Likelohood - how likely / plausible the observed data are under different parameter values,
+Posterior - updated belief about a parameter after seeing data.
+
+
+2. A frequentist and a Bayesian both analyze the same data.
+The frequentist says: “The parameter is fixed; the data vary.”
+The Bayesian says: “The data are fixed; the parameter varies.”
+What does this difference mean in practice?
+
+
+3. What is the purpose of using Markov Chain Monte Carlo (MCMC 马尔可夫链蒙特卡洛) in Bayesian analysis?
+Choose the best answer:
+A. To compute p-values.
+B. To test if data are normal.
+C. To approximate the posterior distribution by sampling.
+D. To remove outliers.
+
+4. When we say “all models are wrong, but some are useful”, what are we really warning against?
+A. Models are always inaccurate, so we should never use them.
+B. Models are simplifications — useful tools, not perfect truths.
+C. Statistical models can exactly represent reality.
+D. Bayesian models never make mistakes.
+
+5. Why does the course emphasize designing models explicitly instead of using pre-made tests (like t-test or ANOVA 方差分析)?
+Write one or two sentences.
 ---
 
 #
@@ -62,7 +138,6 @@ We compute the likelihood - "how likely is the observed data for different value
 Since we don't know the real p, we test many possible p from p_grid.
 For each p in p_grid, we compute the likelihood of observing the data (e.g., 3 water in 3 tosses).
 Then we multiply the likelihood by the prior to get the unstandardized posterior.
-
 
 # Outcome vs Predictor
 In regression we separate outcome (the thing we want to predict) from predictors (the things we think influence outcome).
@@ -77,7 +152,6 @@ $$\y_i$$ ~ Normal($$\mu_i$$, $$\sigma$$) (likelihood for outcome)
 $$\mu_i$$ = $$\alpha + \beta x_i$$ (linear model for mean)
 Priors like $$\alpha$$ ~ Normal(?, ?), $$\beta$$ ~ Normal(?, ?), $$\sigma$$ ~ Exponential(?) (Or Uniform) set our basseline beliefs.
 
-
 $$\begin{aligned}
 height_i &\sim \text{Normal}(\mu_i, \sigma) \\
 \mu_i &= a + b \cdot (weight_i - \bar{weight}) \\
@@ -87,6 +161,7 @@ b &\sim \text{Normal}(0, 10) \\
 \end{aligned}$$
 
 # Lecture 2
+
 DAG (Directed Acyclic Graph) is a graphical representation of causal relationships between variables.
 - Node: variable
 - Directed edge: causal influence from one variable to another
@@ -99,6 +174,7 @@ Symbols in DAG:
 - Descendant: downstream variable of a collider or cause
 
 ## Fork - Confounder
+
 A confounder is a variable that influences both the cause and the effect, creating a spurious association between them.
 A confounder can create a false impression of a causal relationship between the cause and effect,
 
@@ -118,6 +194,7 @@ Z is not a mediator between X and Y.
 condition on Z to block the backdoor path and remove confounding.
 
 ## Pipe - Mediator
+
 A mediator is a variable that lies on the causal path between a cause and an effect.
 
 X -> M -> Y
@@ -132,6 +209,7 @@ Don't condition on M if you want the total effect.
 Condition on M if you only want the direct effect.
 
 ## Collider - Selection Bias
+
 A Collider is a variable that is influenced by two other variables.
 
 X -> C <- Y
@@ -144,8 +222,8 @@ But if you condition on C, they become correlated - a spurious correlation creat
 
 Never condition on a collider, or any of its descendants, because it introduces bias.
 
-
 ## Descendant
+
 A descendant is any variable that is downstream of a collider or cause.
 
 X -> C <- Y
@@ -157,10 +235,10 @@ Y: outcome (dependent variable)
 D is a descendant of collider C, it inherits C's properties.
 If C is a collider, conditioning on its descendant also opens a path and causes bias.
 
-
 # Lecture 3
 
 ## Normal Distribution 正态分布
+
 The normal distribution is a continuous probability distribution characterized by its mean (average) and standard deviation (spread). 
 It is symmetric around the mean, with most values clustering around the mean and fewer values appearing as you move away from it.
 
@@ -172,6 +250,7 @@ predictor - independent variable - continuous
 Use on continuous data that can take any value within a range.
 
 ## Poisson Distribution 泊松分布
+
 The Poisson distribution models the number of events occurring within a fixed interval of time or space, given a known average rate of occurrence.
 
 dpois(k, lambda=λ) gives the probability of observing k events in an interval when the average rate is λ.
@@ -181,8 +260,8 @@ predictor - independent variable - rate of occurrence
 
 Uses on count data with no upper bound.
 
-
 ## Binomial Distribution 二项分布
+
 The binomial distribution models the number of successes in a fixed number of independent Bernoulli trials, each with the same probability of success.
 
 dbinom(k, size=n, prob=p) gives the probability of getting k successes in n trials with success probability p.
@@ -193,7 +272,52 @@ predictor - independent variable - probability of success
 Use on bonary or proportion data with a known number of trials.
 
 # Lecture 4
-## MCMC
+
+## MCMC Markov Chain Monte Carlo
+
 MCMC is a computational method that simulates random walks through parameter space to approximate the posterior.
 Think of it as sending explorers to sample the mountain of probabilities - where they spend most of their time in high-probability regions.
+
+Monte Carlo = using random sampling to estimate things numerically. -> Thinking of rolling dice to approximate probabilities.
+Markov Chain = each new sample depends only on the previous one.
+
+-> Build a chain of random samples that gradually explores the shape of the posterior distribution.
+
+### Intuition
+Imagine the posterior as a mountain landscape.
+You want to know its shape — where the peaks (high probability) are.
+But it's too complex to describe analytically.
+
+MCMC sends out walkers (chains) that wander around:
+- They move toward high-probability areas.
+- They occasionally explore low-probability areas.
+- After many steps, the collection of samples approximates the true posterior.
+
+```{r}
+# a simple Bayesian regression using ulam (Stan)
+library(rethinking)
+data(Howell1)
+d <- Howell1[ d$age >= 18 , ]
+m <- ulam(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <- a + b * weight,
+    a ~ dnorm(178, 20),
+    b ~ dnorm(0, 1),
+    sigma ~ dunif(0, 50)
+  ), data = d, chains = 4, cores = 4)
+precis(m)
+plot(m)
+```
+
+Because most Bayesian models are too complicated to solve by hand.
+MCMC gives us a numerical approximation of the posterior — accurate enough for inference, simulation, and prediction.
+
+| Concept            | Meaning                                  | Analogy                                          | Chinese   |
+| ------------------ | ---------------------------------------- | ------------------------------------------------ | --------- |
+| Residual variation | Random scatter around μ                  | Noise the model can’t explain                    | 残差 / 噪声   |
+| p-value            | Prob. of data given H₀                   | “How surprising is this if nothing is going on?” | p值        |
+| MCMC               | Sampling method to approximate posterior | Explorers mapping a mountain                     | 马尔可夫链蒙特卡洛 |
+
+Scatter means spread or dispersion 分散程度 of data points - how much the values deviate from the average mu or from the fitted model line.
 

@@ -99,7 +99,7 @@ plot(posterior ~ p_grid, type="l")
 All models simplify reality, so they are never 100 % correct, 
 but they can still help us reason, predict, and learn about the world.
 
-2. What’s the difference between the frequentist and Bayesian view of probability?
+2. What's the difference between the frequentist and Bayesian view of probability?
 
 Frequentist: probability = long-run frequency of events.
 Bayesian: probability = degree of belief about something (how likely we think it is).
@@ -110,7 +110,7 @@ The prior represents what we believe about a parameter (like p) before we see an
 
 4. What is the posterior, and how is it related to the likelihood and prior?
 
-Posterior ∝ Likelihood × Prior.
+Posterior ∝ Likelihood x Prior.
 It is proportional to the likelihood (how well the data supports different parameter values) times the prior.
 The posterior is our updated belief about the parameter after seeing the data.
 
@@ -122,7 +122,7 @@ when the probability of success on each trial is 0.5. The result is 0.125 (or 12
 
 6. Why do we multiply likelihood * prior in Bayesian updating?
 
-Because Bayes’ rule says that our new belief (posterior) is proportional to how well each hypothesis fits the data (likelihood) times how strongly we believed it before (prior).
+Because Bayes' rule says that our new belief (posterior) is proportional to how well each hypothesis fits the data (likelihood) times how strongly we believed it before (prior).
 The multiplication combines old knowledge with new evidence.
 
 7. After we multiply likelihood and prior, why do we divide by sum(posterior)?
@@ -137,7 +137,7 @@ Those values make “3 heads in 3 flips” very likely, so the posterior curve p
 
 9. If you observed 1 head and 2 tails, how will the posterior shape change compared to 3 heads?
 
-It would shift toward smaller p values (around 0.3–0.4) because those make “1 out of 3” more likely.
+It would shift toward smaller p values (around 0.3 - 0.4) because those make “1 out of 3” more likely.
 The distribution becomes lower near p = 1 and higher near p = 0.
 
 10. Why is Bayesian inference sometimes described as “learning from data”?
@@ -149,7 +149,7 @@ Each dataset teaches the model something new.
 
 After fitting the model, we check whether it makes realistic predictions—using posterior predictive checks or comparison with actual data—to see if our assumptions were reasonable.
 
-12. Suppose your model’s predictions don’t match real data.
+12. Suppose your model's predictions don't match real data.
 What might that tell you about your prior or likelihood assumptions?
 
 Something is wrong with our assumptions—maybe the prior is unrealistic or the likelihood (data-generation story) is too simple.
