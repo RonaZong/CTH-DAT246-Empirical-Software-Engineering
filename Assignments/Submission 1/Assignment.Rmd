@@ -1,0 +1,543 @@
+---
+title: "Assignment: AI-assisted Code Reviews"
+author: "Xingrong Zong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Assignment: AI-assisted Code Reviews
+
+### Setup
+```{r setup, message=FALSE, warning=FALSE}
+# knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+# Load libraries
+library(dagitty)
+library(ggdag)
+library(ggplot2)
+library(rethinking)
+library(dplyr)
+library(tidyverse)
+library(skimr)
+# theme_set(theme_dag_blank())
+```
+
+Make sure using the same **R session** that has:
+```{r}
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+### Data Inspection
+```{r}
+# Helps understand data structure
+reviewers <- read.csv("Assignments/reviewers.csv")
+reviews <- read.csv("Assignments/reviews.csv")
+str(reviewers)
+str(reviews)
+head(reviewers)
+head(reviews)
+```
+
+### Modeling Strategy
+- Count data -> Poisson / Negative Binomial
+- Continuous outcome -> Normal / Gamma
+- Binary outcome -> Binomial (logit link)
+Match the maximum entropy distribution conssitent with the data's constraints.
+
+### Model Building Steps
+1. Define causal assumptions and draw DAGs.
+2. Identify adjustment sets for estimating the effect of AI usage on approval rates.
+3. Prepare data: merge datasets, create key variables, standardize predictors.
+4. Descriptive statistics and visualizations.
+5. Statistical modeling: choose model structure based on DAGs.
+6. Specify priors and conduct prior predictive checks.
+7. Train models and assess convergence.
+8. Compare models using LOO/WAIC.
+
+```{r}
+# Fit model using MCMC
+ml <- ulam(
+  alist(
+    result ~ dnorm( mu, sigma ),
+    mu <- a + b * x,
+    a ~ dnorm( 0, 1 ),
+    b ~ dnorm( 0, 1 ),
+    sigma ~ dexp(1)
+  ), data=mydata, chains=4, cores=4
+)
+```
+
+### Compare Models
+```{r}
+compare(ml1, ml2, ml3)
+```
+
+### Posterior Predictive Checks
+```{r}
+precis(m1)
+postcheck(m1)
+pp_check(m1)
+```
+
+### Interpret Results
+
+
+## Causal Assumptions
+Outcomes:
+- `extent (E)`: Number of characters in the code review.
+- `quality (Q)`: Subjective quality of the code review as assessed by experts (where 1 is bad and 5 good quality).
+- `result (R)`:Whether the code review contributed to making a decision on the pull request (1) or not (0).
+
+Predictors:
+- `age (G)`: Age of the reviewer in number of years.
+- `skill (S)`: Skill of a reviewer measured on a continuous scale.
+- `used.cr.technology (A)`: Whether the reviewer uses AI-support during code review (1) or not(0).
+- `complexity (C)`: Relative complexity of the code change to be reviewed. 
+
+### DAG 1:
+Selection + Confounding + Mediation
+- `age` -> `skill` (older reviewers are usually more experienced and skilled)
+- `age` -> `used.cr.technology` (older reviewers are less likely to adopt AI)
+- `skill` -> `extent` & `quality` (more skilled reviewers write more concise and higher quality reviews)
+- `complexity` -> `extent` & `quality `(more complex code changes require longer reviews and harder to review well)
+- `used.cr.technology` -> `extent` & `quality` (AI-assisted can change length and clarity of reviews)
+- `extent` & `quality` -> `result`,  (more concise and higher quality reviews are more likely to have higher approval rates)
+Aversion: `used.cr.technology` → `result` (direct negative path, “categorically discarded more often”)
+
+dag {
+bb="0,0,1,1"
+AI [exposure,pos="0.100,0.500"]
+Age [adjusted,pos="0.200,0.200"]
+Complexity [adjusted,pos="0.600,0.500"]
+Extent [outcome,pos="0.600,0.200"]
+Quality [outcome,pos="0.600,0.800"]
+Result [outcome,pos="0.900,0.500"]
+Skill [pos="0.400,0.200"]
+AI -> Extent
+AI -> Quality
+Age -> AI
+Age -> Skill
+Complexity -> Extent
+Complexity -> Quality
+Extent -> Result
+Quality -> Result
+Skill -> Extent
+Skill -> Quality
+}
+
+Predictors (independent variables): `used.cr.technology`
+Confounders: `age`, `skill`, `complexity`
+Mediators: `extent`, `quality`
+Outcomes (dependent variables): `result`
+
+Therefore, 
+- `age`, `skill`, and `complexity` are confounders that influence both the predictor `used.cr.technology` and the outcomes `extent`, `quality`, and `result`.
+- `extent` and `quality` are mediators that lie on the causal path between the predictor `used.cr.technology` and the outcome `result`.
+
+This DAG supports total vs direct effect reasoning:
+- Total effect of `used.cr.technology` on `result` without conditioning on mediators `extent` and `quality`.
+- Direct effect of `used.cr.technology` on `result` conditioning on mediators `extent` and `quality` and confounders `age`, `skill`, and `complexity`.
+
+age ─▶ skill ─▶ extent ─▶ result
+ │             └▶ quality ─▶ result
+ └────────▶ used.cr.technology ─▶ extent, quality ─▶ result
+complexity ─▶ extent, quality, result
+
+```{r dag1, fig.height=5, fig.width=7}
+dag1 <- dagitty("dag {
+    age -> skill -> extent
+    age -> skill -> quality
+    age -> used.cr.technology
+    complexity -> extent
+    complexity -> quality
+    used.cr.technology -> extent
+    used.cr.technology -> quality
+    extent -> result
+    quality -> result
+}")
+
+ggdag(dag1, text = FALSE, layout = "nicely") +
+geom_dag_edges(edge_colour = "grey30") +
+geom_dag_point(shape = 21, size = 16, fill = "#8ECAE6", colour = "#4E9AC3", stroke = 0.8) +
+geom_dag_text(aes(label = name), size = 4, colour = "black") +
+labs(title = "DAG 1: Selection + Confounding + Mediation") +
+coord_equal()
+```
+
+### DAG 2：
+Skill-driven; AI mainly a proxy for skill & complexity
+adoption + Confounding + Mediation
+- `age` -> `skill` (older reviewers are usually more experienced and skilled)
+- `skill` -> `used.cr.technology` (more skilled reviewers are usually curious or confident enough to try new tools.)
+- `skill` -> `extent` & `quality` (more skilled reviewers write more concise and higher quality reviews)
+- `complexity` -> `extent` & `quality` (more complex code changes require longer reviews and harder to review well)
+- `extent` & `quality` -> `result`,  (more concise and higher quality reviews are more likely to have higher approval rates)
+`used.cr.technology` -> `result` (weak/zero) direct path to Result; main AI influence is mediated by Extent/Quality
+
+Allow that `used.cr.technology` is a proxy for skill and complexity, and the main influence of AI on `result` is mediated by `extent` and `quality`.
+most of the observed difference between AI and non-AI reviews is due to differences in skill and complexity, not a direct effect of AI.
+Skill is a confounder that influences both the predictor `used.cr.technology` and the outcomes `extent`, `quality`, and `result`.
+
+The apparent correlation between “AI users have lower approval rate” might not mean AI causes worse results.
+It could mean “AI users are younger, less experienced, or handle harder reviews.”
+
+After adjusting for those confounders (Skill, Complexity, Age), the direct effect of AI may disappear.
+
+This DAG supports total vs adjusted vs direct effect reasoning:
+- Total effect of `used.cr.technology` on `result` without conditioning on mediators `extent` and `quality`.
+- Adjusted effect of `used.cr.technology` on `result` conditioning on confounders `age`, `skill`, and `complexity` but not mediators `extent` and `quality`.
+- Direct effect of `used.cr.technology` on `result` conditioning on mediators `extent` and `quality` and confounders `age`, `skill`, and `complexity`.
+
+age ─▶ skill ─▶ used.cr.technology ─▶ extent ─▶ result
+ │                     │                └▶ quality ─▶ result
+ │                     └────────────────────────────────▶ result (weak)
+complexity ─────────────────────────▶ extent, quality, result
+
+```{r dag2, fig.height=5, fig.width=7}
+dag2 <- dagitty("dag {
+    G -> S
+    S -> A
+    S -> E
+    S -> Q
+    C -> E
+    C -> Q
+    E -> R
+    Q -> R
+    A -> R
+}")
+
+ggdag(dag2, text = FALSE, layout = "nicely") +
+geom_dag_edges(edge_colour = "grey30") +
+geom_dag_point(shape = 21, size = 16, fill = "#BDEFB6", colour = "#69BE63", stroke = 0.8) +
+geom_dag_text(aes(label = name), size = 4, colour = "black") +
+labs(title = "DAG 2: Skill-driven; AI as proxy for skill & complexity") +
+coord_equal()
+```
+
+```{r adjustment-sets}
+adjustmentSets(dag1, exposure = "A", outcome = "R")
+adjustmentSets(dag2, exposure = "A", outcome = "R")
+```
+
+Viability discussion. 
+Compare which back-door paths need blocking and what each adjustment set implies (e.g., in DAG 1, include Age, Skill, Complexity to estimate AI’s effect; if you include Extent/Quality you move from total to direct effect). 
+Tie your reasoning to the collider/mediator logic practiced in E3 (information, K–L, thinking carefully about model vs. data) and E5 (mediation pipes).
+
+---
+
+## Descriptive Statistics & Visualizations
+
+Follow the standardize/visualize patterns from E2/E4:
+Summaries and correlations (extent/quality/complexity/age/skill/AI/result).
+Visuals: scatter (Extent vs Complexity), outcome by AI (box/scatter), approval rates by AI.
+Normalize extent/quality where helpful; keep raw scales visible for interpretability.
+
+```{r data-prep}
+# reviewers <- read.csv("Assignments/reviewers.csv")
+# str(reviewers) # check format
+# reviewers <- as.list(reviewers) # make to a list so we can add alpha below
+
+# reviews <- read.csv("Assignments/reviews.csv")
+# str(reviews) # check format
+# reviews <- as.list(reviews) # make to a list so we can add alpha below
+
+# Merge datasets
+# df <- merge(reviews, reviewers, by = "reviewer_id")
+# glimpse(df)
+
+# Rename variables for Stan compatibility
+# df <- df %>%
+#     rename(
+#         used_cr_technology = used.cr.technology,
+#     )
+
+# Standardize predictors
+# df <- df %>%
+#     mutate(
+#         age_s = scale(age),
+#         skill_s = scale(skill),
+#         complexity_s = scale(complexity),
+#         extent_s = scale(extent),
+#         quality_s = scale(quality)
+#     )
+```
+
+Load files:
+```{r descriptives, fig.height=5, fig.width=7}
+reviewers <- read_csv("Assignments/reviewers.csv")
+reviews   <- read_csv("Assignments/reviews.csv")
+
+# inspect
+head(reviewers)
+head(reviews)
+```
+  reviewer.id   age skill used.cr.technology
+        <dbl> <dbl> <dbl>              <dbl>
+1           1    51  4.25                  0
+2           2    55  3.74                  0
+3           3    49  4.46                  0
+4           4    38  3.83                  0
+5           5    44  4.18                  0
+6           6    27  2.66                  1
+
+  reviewer.id review.id complexity result extent quality
+        <dbl>     <dbl>      <dbl>  <dbl>  <dbl>   <dbl>
+1           1       623      0.367      1    229       3
+2           1      1381      0.490      1    184       3
+3           1       673     -1.40       0    126       3
+4           1       136      0.545      0    183       3
+5           1        35     -0.882      0    169       3
+6           1       749      0.919      1    179       4
+
+Merge tha tables:
+```{r}
+df <- reviews %>%
+  left_join(reviewers, by = "reviewer.id")
+
+# quick structure check
+glimpse(df)
+```
+Rows: 2,000
+Columns: 9
+$ reviewer.id        <dbl> 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, …
+$ review.id          <dbl> 623, 1381, 673, 136, 35, 749, 626, 620, 495, 1136, …
+$ complexity         <dbl> 3.669993e-01, 4.899597e-01, -1.396837e+00, 5.453157…
+$ result             <dbl> 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, …
+$ extent             <dbl> 229, 184, 126, 183, 169, 179, 299, 257, 167, 320, 1…
+$ quality            <dbl> 3, 3, 3, 3, 3, 4, 3, 4, 4, 4, 3, 3, 3, 4, 3, 3, 5, …
+$ age                <dbl> 51, 51, 51, 51, 51, 51, 51, 55, 55, 55, 55, 55, 55,…
+$ skill              <dbl> 4.254235, 4.254235, 4.254235, 4.254235, 4.254235, 4…
+$ used.cr.technology <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+
+Create Key Variables:
+```{r}
+df <- df %>%
+    mutate(
+        ai_user = as.integer(used.cr.technology),
+        approved = as.integer(result == 1)
+    )
+```
+
+Model:
+```{r}
+m1_total <- glm(result ~ usd.cr.technology + age + skill + complexity,
+                data = df, family = binomial(link = "logit"))
+```
+
+Direct effect:
+```{r}
+m2_direct <- glm(result ~ usd.cr.technology + age + skill + complexity + extent + quality,
+                 data = df, family = binomial(link = "logit"))
+```
+
+Descriptive Statistics:
+Overall summaries:
+```{r}
+skim(df %>% select(extent, quality, complexity, age, skill))
+```
+── Variable type: numeric ──────────────────────────────────────────────────────
+  skim_variable n_missing complete_rate     mean     sd     p0     p25      p50
+1 extent                0             1 191.     72.2   34     139     180
+2 quality               0             1   3.41    0.642  1       3       3
+3 complexity            0             1  -0.0383  0.990 -3.06   -0.705  -0.0308
+4 age                   0             1  40.1     9.83  20      33      41
+5 skill                 0             1   3.61    0.802  0.419   3.22    3.74  
+      p75   p100 hist
+1 236     538    ▃▇▃▁▁
+2   4       5    ▁▁▇▇▁
+3   0.628   3.36 ▁▅▇▃▁
+4  48      62    ▃▅▇▅▂
+5   4.17    4.92 ▁▁▂▇▆
+
+Groupwise summaries by AI usage:
+```{r}
+df %>%
+  group_by(ai_user) %>%
+  summarise(
+    mean_extent = mean(extent, na.rm = TRUE),
+    mean_quality = mean(quality, na.rm = TRUE),
+    mean_complexity = mean(complexity, na.rm = TRUE),
+    approval_rate = mean(approved, na.rm = TRUE),
+    n = n()
+  )
+```
+  ai_user mean_extent mean_quality mean_complexity approval_rate     n
+    <int>       <dbl>        <dbl>           <dbl>         <dbl> <int>
+1       0        180.         3.48         -0.0605         0.589   917
+2       1        200.         3.35         -0.0195         0.404  1083
+
+Visualizations:
+Extent vs Complexity:
+```{r}
+ggplot(df, aes(x = complexity, y = extent)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Extent vs Complexity",
+       x = "Complexity of code review",
+       y = "Extent (characters)") +
+  theme_minimal()
+```
+
+Quality by AI usage
+```{r}
+ggplot(df, aes(x = factor(ai_user, labels = c("No AI", "AI")), y = quality)) +
+  geom_boxplot() +
+  labs(title = "Quality by AI usage",
+       x = "Used code review technology",
+       y = "Quality rating") +
+  theme_minimal()
+```
+
+Approval Rate by AI usage
+```{r}
+df %>%
+  group_by(ai_user) %>%
+  summarise(approval_rate = mean(approved, na.rm = TRUE)) %>%
+  ggplot(aes(x = factor(ai_user, labels = c("No AI", "AI")), y = approval_rate)) +
+  geom_col(fill = "steelblue") +
+  ylim(0,1) +
+  labs(title = "Approval rate by AI usage",
+       x = "Used code review technology",
+       y = "Approval rate") +
+  theme_minimal()
+```
+
+Correlation matrix
+```{r}
+df %>%
+  select(extent, quality, complexity, age, skill, ai_user, approved) %>%
+  cor(use = "complete.obs") %>%
+  round(3)
+```
+           extent quality complexity    age  skill ai_user approved
+extent      1.000  -0.261      0.692 -0.272 -0.337   0.140    0.379
+quality    -0.261   1.000     -0.144  0.371  0.496  -0.098    0.148
+complexity  0.692  -0.144      1.000 -0.026 -0.019   0.021    0.441
+age        -0.272   0.371     -0.026  1.000  0.776  -0.413    0.104
+skill      -0.337   0.496     -0.019  0.776  1.000  -0.345    0.109
+ai_user     0.140  -0.098      0.021 -0.413 -0.345   1.000   -0.184
+approved    0.379   0.148      0.441  0.104  0.109  -0.184    1.000
+
+```{r}
+vars <- df %>% 
+  select(extent, quality, complexity, age, skill, used.cr.technology, approved)
+
+cor_mat <- cor(vars, use = "complete.obs")
+round(cor_mat, 2)
+```
+
+```{r}
+# Compute significance (p-values)
+cor_test <- cor.mtest <- function(mat, conf.level = 0.95) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], conf.level = conf.level)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+      lowCI.mat[i, j] <- lowCI.mat[j, i] <- tmp$conf.int[1]
+      uppCI.mat[i, j] <- uppCI.mat[j, i] <- tmp$conf.int[2]
+    }
+  }
+  list(p = p.mat, lowCI = lowCI.mat, uppCI = uppCI.mat)
+}
+
+p.mat <- cor_test(vars)$p
+```
+
+```{r}
+library(ggcorrplot)
+
+ggcorrplot(cor_mat,
+           hc.order = TRUE,          # hierarchical clustering order
+           type = "lower",           # show only lower triangle
+           lab = TRUE,               # show correlation values
+           p.mat = p.mat,            # add significance info
+           sig.level = 0.05,         # mark significant correlations
+           insig = "blank",          # hide non-significant
+           colors = c("red", "white", "blue"),
+           title = "Correlation Matrix of Key Variables",
+           lab_size = 3) +
+  theme_minimal()
+```
+
+```{r}
+cor_filtered <- cor_mat
+cor_filtered[abs(cor_filtered) < 0.3] <- NA
+
+ggcorrplot(cor_filtered,
+           type = "lower",
+           lab = TRUE,
+           colors = c("red", "white", "blue"),
+           title = "Strong Correlations (|r| > 0.3)") +
+  theme_minimal()
+
+```
+Table X presents the correlation matrix of the key variables.
+The results reveal strong positive associations between complexity and extent (r = 0.69) and between age and skill (r = 0.78).
+Skill also correlates with quality (r = 0.50), suggesting that more experienced reviewers tend to produce higher-quality feedback.
+Negative correlations between ai_user and both age (r = –0.41) and skill (r = –0.35) indicate that younger, less-experienced reviewers are more likely to use AI technology.
+The approval rate is moderately correlated with extent (r = 0.38) and complexity (r = 0.44), while showing a weak negative correlation with AI usage (r = –0.18).
+These findings support the inclusion of complexity, extent, age, skill, and AI usage as key variables in the causal models of Task 3.
+
+
+
+The dataset contains 200 reviewers and 2000 reviews.
+The mean extent is X, with higher values for complex reviews.
+Non-AI reviewers have an average approval rate of ≈ 0.59, while AI users’ approval rate is ≈ 0.40.
+Skill and age correlate positively with quality (r ≈ 0.5 and 0.37 respectively), indicating more experienced reviewers write higher-quality comments.
+Complexity and extent are strongly correlated (r ≈ 0.69).
+
+
+## Statistical Modeling
+### Option (a): 1 DAG → 1 model per outcome
+Extent (continuous): linear model (or Student-t if heavy tails):
+Extent_𝑖 ∼ 𝑁 (𝜇_𝑖, 𝜎), 𝜇_𝑖 = 𝛼 + 𝛽_AI * AI_𝑖 + 𝛽_𝑐 * Complexity_𝑖 + 𝛽_𝑎 * Age_𝑖 + 𝛽_𝑠 * Skill_𝑖.
+(E2 shows linear regression workflow; E4 suggests adding varying intercepts by reviewer if you want a multilevel version.)
+ 
+Quality (ordered 1–5): ordered logistic/probit:
+
+Pr(Quality_𝑖 ≤ 𝑘) = logit*(−1) * (𝜏_𝑘 − 𝜂_𝑖), 𝜂_𝑖 = 𝛾_0 + 𝛾_AI * AI_𝑖 + 𝛾_𝑐 * Complexity_𝑖 + 𝛾_𝑎 * Age_𝑖 + 𝛾_𝑠 * Skill_𝑖.
+
+(Ordered categorical modeling is exactly what E6 trains, including priors on cutpoints.)
+
+
+Result (binary): logistic:
+
+Result_𝑖 ∼ Bernoulli(𝑝_𝑖), logit(𝑝_𝑖) = 𝛿_0 + 𝛿_AI * AI_𝑖 + 𝛿_𝑐 * Complexity_𝑖 + 𝛿_𝑎 * Age_𝑖 + 𝛿_𝑠 * Skill_𝑖 + [𝛿_𝑒 * Extent_𝑖 + 𝛿_𝑞 * Quality_𝑖],
+
+bracketed terms included when you target the direct (not total) effect of AI (E5).
+Add random intercepts for reviewer.id to acknowledge repeated reviews (E4).
+
+### Option (b): 1 outcome across ≥2 DAGs (recommended: Result)
+
+Model R₁ (DAG 1, total effect): logit(Result) ~ AI + Age + Skill + Complexity.
+
+Model R₂ (DAG 1, direct effect): logit(Result) ~ AI + Age + Skill + Complexity + Extent + Quality.
+Compare R₁ vs R₂ (WAIC/LOO). If 𝛿_AI shrinks a lot in R₂, the effect is mediated by Extent/Quality (or by the aversion path you posit). (E5 gives the template for this comparison.)
+
+## Priors & Prior Predictive Checks
+Use standardized inputs to simplify priors (E2/E4/E6 style):
+
+Intercepts (logit/ordered): Normal(0,1) or Normal(−1,1) when you believe baseline approval < 50% (see NWO example).
+
+Slopes: Normal(0, 0.5) or Normal(0, 1) on standardized predictors (regularizing as in Wines2012).
+
+Cutpoints (ordered quality): ordered priors (e.g., Normal with increasing constraints). (E6)
+
+Group SDs (if multilevel): half-Normal(0, 1) on random-effect scales (E4).
+Run prior predictive checks to ensure plausible ranges before training (E4/E6).
+
+## Assess Training & Compare Models
+Convergence (R-hat, trace plots), effective sample sizes (if Bayesian; E4).
+
+LOO/WAIC to compare candidate models and decide which DAG mapping predicts best (E4/E7).
+
+## Conclusions
+Report causal statements with the adjustment set tied to your DAG.
+
+Contrast total vs direct effect of AI on Result.
+
+Discuss bias/aversion (direct AI → Result path) and whether differences remain after adjusting for Extent/Quality/Complexity.
+This is exactly what the assignment asks you to synthesize at the end.

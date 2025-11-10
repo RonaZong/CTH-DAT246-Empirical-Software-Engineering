@@ -7,6 +7,81 @@ output: html_document
 
 # Assignment: AI-assisted Code Reviews
 
+### Setup
+```{r setup, message=FALSE, warning=FALSE}
+# knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+# Load libraries
+library(dagitty)
+library(ggdag)
+library(ggplot2)
+library(rethinking)
+library(dplyr)
+library(tidyverse)
+library(skimr)
+# theme_set(theme_dag_blank())
+```
+
+Make sure using the same **R session** that has:
+```{r}
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+```
+
+### Data Inspection
+```{r}
+# Helps understand data structure
+reviewers <- read.csv("Assignments/reviewers.csv")
+reviews <- read.csv("Assignments/reviews.csv")
+str(reviewers)
+str(reviews)
+head(reviewers)
+head(reviews)
+```
+
+### Modeling Strategy
+- Count data -> Poisson / Negative Binomial
+- Continuous outcome -> Normal / Gamma
+- Binary outcome -> Binomial (logit link)
+Match the maximum entropy distribution conssitent with the data's constraints.
+
+### Model Building Steps
+1. Define causal assumptions and draw DAGs.
+2. Identify adjustment sets for estimating the effect of AI usage on approval rates.
+3. Prepare data: merge datasets, create key variables, standardize predictors.
+4. Descriptive statistics and visualizations.
+5. Statistical modeling: choose model structure based on DAGs.
+6. Specify priors and conduct prior predictive checks.
+7. Train models and assess convergence.
+8. Compare models using LOO/WAIC.
+
+```{r}
+# Fit model using MCMC
+ml <- ulam(
+  alist(
+    result ~ dnorm( mu, sigma ),
+    mu <- a + b * x,
+    a ~ dnorm( 0, 1 ),
+    b ~ dnorm( 0, 1 ),
+    sigma ~ dexp(1)
+  ), data=mydata, chains=4, cores=4
+)
+```
+
+### Compare Models
+```{r}
+compare(ml1, ml2, ml3)
+```
+
+### Posterior Predictive Checks
+```{r}
+precis(m1)
+postcheck(m1)
+pp_check(m1)
+```
+
+### Interpret Results
+
+
 ## Causal Assumptions
 Outcomes:
 - `extent (E)`: Number of characters in the code review.
@@ -19,35 +94,57 @@ Predictors:
 - `used.cr.technology (A)`: Whether the reviewer uses AI-support during code review (1) or not(0).
 - `complexity (C)`: Relative complexity of the code change to be reviewed. 
 
-```{r setup, message=FALSE, warning=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-
-# Load libraries
-library(dagitty)
-library(ggdag)
-library(ggplot2)
-library(rethinking)
-library(dplyr)
-library(tidyverse)
-library(skimr)
-theme_set(theme_dag_blank())
-```
-
-Make sure using the same **R session** that has:
-```{r}
-options(mc.cores = parallel::detectCores())
-rstan_options(auto_write = TRUE)
-```
-
-### DAG 1：
+### DAG 1:
 Selection + Confounding + Mediation
-- `age` -> `skill` (older reviewers are usually more experienced and skilled)
+- `age` -> `skill` -> {`extent`, `quality`} (older reviewers are usually more experienced and skilled)
 - `age` -> `used.cr.technology` (older reviewers are less likely to adopt AI)
-- `skill` -> `extent` & `quality` (more skilled reviewers write more concise and higher quality reviews)
-- `complexity` -> `extent` & `quality `(more complex code changes require longer reviews and harder to review well)
-- `used.cr.technology` -> `extent` & `quality` (AI-assisted can change length and clarity of reviews)
-- `extent` & `quality` -> `result`,  (more concise and higher quality reviews are more likely to have higher approval rates)
+- `complexity` -> {`extent`, `quality`} (more complex code changes require longer reviews and harder to review well)
+- `used.cr.technology` -> {`extent`, `quality`, `result` (aversion)} (AI-assisted can change length and clarity of reviews)
+- `extent` -> `quality` -> `result`
+- {`extent`, `quality`} -> `result` (more concise and higher quality reviews are more likely to have higher approval rates)
 Aversion: `used.cr.technology` → `result` (direct negative path, “categorically discarded more often”)
+
+dag {
+bb="0,0,1,1"
+AI [exposure,pos="0.100,0.500"]
+Age [adjusted,pos="0.200,0.200"]
+Complexity [adjusted,pos="0.600,0.500"]
+Extent [outcome,pos="0.600,0.200"]
+Quality [outcome,pos="0.600,0.800"]
+Result [outcome,pos="0.900,0.500"]
+Skill [pos="0.400,0.200"]
+AI -> Extent
+AI -> Quality
+Age -> AI
+Age -> Skill
+Complexity -> Extent
+Complexity -> Quality
+Extent -> Result
+Quality -> Result
+Skill -> Extent
+Skill -> Quality
+}
+
+dag {
+bb="0,0,1,1"
+AI [pos="0.100,0.500"]
+Age [pos="0.200,0.200"]
+Complexity [pos="0.600,0.500"]
+Extent [pos="0.600,0.800"]
+Quality [pos="0.600,0.200"]
+Result [pos="0.900,0.500"]
+Skill [pos="0.400,0.200"]
+AI -> Extent
+Age -> AI
+Age -> Skill
+Complexity -> Extent
+Complexity -> Quality
+Extent -> Quality
+Extent -> Result
+Quality -> Result
+Skill -> Quality
+}
+
 
 Predictors (independent variables): `used.cr.technology`
 Confounders: `age`, `skill`, `complexity`
@@ -69,17 +166,15 @@ complexity ─▶ extent, quality, result
 
 ```{r dag1, fig.height=5, fig.width=7}
 dag1 <- dagitty("dag {
-    G -> S
-    G -> A
-    S -> E
-    S -> Q
-    C -> E
-    C -> Q
-    A -> E
-    A -> Q
-    E -> R
-    Q -> R
-    A -> R
+    age -> skill -> extent
+    age -> skill -> quality
+    age -> used.cr.technology
+    complexity -> extent
+    complexity -> quality
+    used.cr.technology -> extent
+    used.cr.technology -> quality
+    extent -> result
+    quality -> result
 }")
 
 ggdag(dag1, text = FALSE, layout = "nicely") +
