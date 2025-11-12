@@ -7,37 +7,6 @@ output: html_document
 
 # Assignment: AI-assisted Code Reviews
 
-### Setup
-```{r setup, message=FALSE, warning=FALSE}
-# knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-# Load libraries
-library(dagitty)
-library(ggdag)
-library(ggplot2)
-library(rethinking)
-library(dplyr)
-library(tidyverse)
-library(skimr)
-# theme_set(theme_dag_blank())
-```
-
-Make sure using the same **R session** that has:
-```{r}
-options(mc.cores = parallel::detectCores())
-rstan_options(auto_write = TRUE)
-```
-
-### Data Inspection
-```{r}
-# Helps understand data structure
-reviewers <- read.csv("Assignments/reviewers.csv")
-reviews <- read.csv("Assignments/reviews.csv")
-str(reviewers)
-str(reviews)
-head(reviewers)
-head(reviews)
-```
-
 ### Modeling Strategy
 - Count data -> Poisson / Negative Binomial
 - Continuous outcome -> Normal / Gamma
@@ -84,25 +53,23 @@ pp_check(m1)
 
 ## Causal Assumptions
 Outcomes:
-- `extent (E)`: Number of characters in the code review.
-- `quality (Q)`: Subjective quality of the code review as assessed by experts (where 1 is bad and 5 good quality).
-- `result (R)`:Whether the code review contributed to making a decision on the pull request (1) or not (0).
+- `extent`: Number of characters in the code review.
+- `quality`: Subjective quality of the code review as assessed by experts (where 1 is bad and 5 good quality).
+- `result`:Whether the code review contributed to making a decision on the pull request (1) or not (0).
 
 Predictors:
-- `age (G)`: Age of the reviewer in number of years.
-- `skill (S)`: Skill of a reviewer measured on a continuous scale.
-- `used.cr.technology (A)`: Whether the reviewer uses AI-support during code review (1) or not(0).
-- `complexity (C)`: Relative complexity of the code change to be reviewed. 
+- `age`: Age of the reviewer in number of years.
+- `skill`: Skill of a reviewer measured on a continuous scale.
+- `used.cr.technology`: Whether the reviewer uses AI-support during code review (1) or not(0).
+- `complexity`: Relative complexity of the code change to be reviewed. 
 
 ### DAG 1:
 Selection + Confounding + Mediation
 - `age` -> `skill` -> {`extent`, `quality`} (older reviewers are usually more experienced and skilled)
 - `age` -> `used.cr.technology` (older reviewers are less likely to adopt AI)
 - `complexity` -> {`extent`, `quality`} (more complex code changes require longer reviews and harder to review well)
-- `used.cr.technology` -> {`extent`, `quality`, `result` (aversion)} (AI-assisted can change length and clarity of reviews)
-- `extent` -> `quality` -> `result`
+- `used.cr.technology` -> {`extent`, `quality`, `result` (aversion)} (AI-assisted can change length and clarity of reviews; direct negative path, “categorically discarded more often”)
 - {`extent`, `quality`} -> `result` (more concise and higher quality reviews are more likely to have higher approval rates)
-Aversion: `used.cr.technology` → `result` (direct negative path, “categorically discarded more often”)
 
 dag {
 bb="0,0,1,1"
@@ -115,6 +82,7 @@ Result [outcome,pos="0.900,0.500"]
 Skill [pos="0.400,0.200"]
 AI -> Extent
 AI -> Quality
+AI -> Result
 Age -> AI
 Age -> Skill
 Complexity -> Extent
@@ -124,6 +92,47 @@ Quality -> Result
 Skill -> Extent
 Skill -> Quality
 }
+
+Predictors (independent variables): `used.cr.technology`
+Confounders: `age`, `skill`, `complexity`
+Mediators: `extent`, `quality`
+Outcomes (dependent variables): `result`
+
+Therefore, 
+- `age`, `skill`, and `complexity` are confounders that influence both the predictor `used.cr.technology` and the outcomes `extent`, `quality`, and `result`.
+- `extent` and `quality` are mediators that lie on the causal path between the predictor `used.cr.technology` and the outcome `result`.
+
+This DAG supports total vs direct effect reasoning:
+- Total effect of `used.cr.technology` on `result` without conditioning on mediators `extent` and `quality`.
+- Direct effect of `used.cr.technology` on `result` conditioning on mediators `extent` and `quality` and confounders `age`, `skill`, and `complexity`.
+
+```{r dag1}
+library(dagitty)
+dag1 <- dagitty("dag{
+age -> skill
+skill -> extent
+skill -> quality
+age -> used.cr.technology
+complexity -> extent
+complexity -> quality
+used.cr.technology -> extent
+used.cr.technology -> quality
+used.cr.technology -> result
+extent -> result
+quality -> result
+}")
+```
+
+
+### DAG 2：
+Skill-driven; AI mainly a proxy for skill & complexity
+adoption + Confounding + Mediation
+- `age` -> `skill` (older reviewers are usually more experienced and skilled)
+- `skill` -> `used.cr.technology` (more skilled reviewers are usually curious or confident enough to try new tools.)
+- `skill` -> `extent` & `quality` (more skilled reviewers write more concise and higher quality reviews)
+- `complexity` -> `extent` & `quality` (more complex code changes require longer reviews and harder to review well)
+- `extent` & `quality` -> `result`,  (more concise and higher quality reviews are more likely to have higher approval rates)
+`used.cr.technology` -> `result` (weak/zero) direct path to Result; main AI influence is mediated by Extent/Quality
 
 dag {
 bb="0,0,1,1"
@@ -145,56 +154,6 @@ Quality -> Result
 Skill -> Quality
 }
 
-
-Predictors (independent variables): `used.cr.technology`
-Confounders: `age`, `skill`, `complexity`
-Mediators: `extent`, `quality`
-Outcomes (dependent variables): `result`
-
-Therefore, 
-- `age`, `skill`, and `complexity` are confounders that influence both the predictor `used.cr.technology` and the outcomes `extent`, `quality`, and `result`.
-- `extent` and `quality` are mediators that lie on the causal path between the predictor `used.cr.technology` and the outcome `result`.
-
-This DAG supports total vs direct effect reasoning:
-- Total effect of `used.cr.technology` on `result` without conditioning on mediators `extent` and `quality`.
-- Direct effect of `used.cr.technology` on `result` conditioning on mediators `extent` and `quality` and confounders `age`, `skill`, and `complexity`.
-
-age ─▶ skill ─▶ extent ─▶ result
- │             └▶ quality ─▶ result
- └────────▶ used.cr.technology ─▶ extent, quality ─▶ result
-complexity ─▶ extent, quality, result
-
-```{r dag1, fig.height=5, fig.width=7}
-dag1 <- dagitty("dag {
-    age -> skill -> extent
-    age -> skill -> quality
-    age -> used.cr.technology
-    complexity -> extent
-    complexity -> quality
-    used.cr.technology -> extent
-    used.cr.technology -> quality
-    extent -> result
-    quality -> result
-}")
-
-ggdag(dag1, text = FALSE, layout = "nicely") +
-geom_dag_edges(edge_colour = "grey30") +
-geom_dag_point(shape = 21, size = 16, fill = "#8ECAE6", colour = "#4E9AC3", stroke = 0.8) +
-geom_dag_text(aes(label = name), size = 4, colour = "black") +
-labs(title = "DAG 1: Selection + Confounding + Mediation") +
-coord_equal()
-```
-
-### DAG 2：
-Skill-driven; AI mainly a proxy for skill & complexity
-adoption + Confounding + Mediation
-- `age` -> `skill` (older reviewers are usually more experienced and skilled)
-- `skill` -> `used.cr.technology` (more skilled reviewers are usually curious or confident enough to try new tools.)
-- `skill` -> `extent` & `quality` (more skilled reviewers write more concise and higher quality reviews)
-- `complexity` -> `extent` & `quality` (more complex code changes require longer reviews and harder to review well)
-- `extent` & `quality` -> `result`,  (more concise and higher quality reviews are more likely to have higher approval rates)
-`used.cr.technology` -> `result` (weak/zero) direct path to Result; main AI influence is mediated by Extent/Quality
-
 Allow that `used.cr.technology` is a proxy for skill and complexity, and the main influence of AI on `result` is mediated by `extent` and `quality`.
 most of the observed difference between AI and non-AI reviews is due to differences in skill and complexity, not a direct effect of AI.
 Skill is a confounder that influences both the predictor `used.cr.technology` and the outcomes `extent`, `quality`, and `result`.
@@ -209,22 +168,8 @@ This DAG supports total vs adjusted vs direct effect reasoning:
 - Adjusted effect of `used.cr.technology` on `result` conditioning on confounders `age`, `skill`, and `complexity` but not mediators `extent` and `quality`.
 - Direct effect of `used.cr.technology` on `result` conditioning on mediators `extent` and `quality` and confounders `age`, `skill`, and `complexity`.
 
-age ─▶ skill ─▶ used.cr.technology ─▶ extent ─▶ result
- │                     │                └▶ quality ─▶ result
- │                     └────────────────────────────────▶ result (weak)
-complexity ─────────────────────────▶ extent, quality, result
-
 ```{r dag2, fig.height=5, fig.width=7}
 dag2 <- dagitty("dag {
-    G -> S
-    S -> A
-    S -> E
-    S -> Q
-    C -> E
-    C -> Q
-    E -> R
-    Q -> R
-    A -> R
 }")
 
 ggdag(dag2, text = FALSE, layout = "nicely") +
@@ -247,11 +192,277 @@ Tie your reasoning to the collider/mediator logic practiced in E3 (information, 
 ---
 
 ## Descriptive Statistics & Visualizations
+Outcome: 
+- `extent` (continuous: number of characters), normal 
+- `quality` (ordered categorical: 1 = bad, 5 = good), normal 
+- `result` (binary: 1 = approved, 0 = not approved), binomial (logit link)
 
-Follow the standardize/visualize patterns from E2/E4:
-Summaries and correlations (extent/quality/complexity/age/skill/AI/result).
-Visuals: scatter (Extent vs Complexity), outcome by AI (box/scatter), approval rates by AI.
-Normalize extent/quality where helpful; keep raw scales visible for interpretability.
+```{r data-prep, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(rethinking)
+library(dplyr)
+library(ggplot2)
+library(skimr)
+
+reviewers <- read.csv("Assignments/reviewers.csv")
+reviews <- read.csv("Assignments/reviews.csv")
+str(reviewers)
+str(reviews)
+head(reviewers)
+head(reviews)
+```
+'data.frame':   200 obs. of  4 variables:
+ $ reviewer.id       : int  1 2 3 4 5 6 7 8 9 10 ...
+ $ age               : int  51 55 49 38 44 27 45 45 35 42 ...
+ $ skill             : num  4.25 3.74 4.46 3.83 4.18 ...
+ $ used.cr.technology: int  0 0 0 0 0 1 0 1 1 1 ...
+
+ 'data.frame':   2000 obs. of  6 variables:
+ $ reviewer.id: int  1 1 1 1 1 1 1 2 2 2 ...
+ $ review.id  : int  623 1381 673 136 35 749 626 620 495 1136 ...
+ $ complexity : num  0.367 0.49 -1.397 0.545 -0.882 ...
+ $ result     : int  1 1 0 0 0 1 1 1 0 1 ...
+ $ extent     : int  229 184 126 183 169 179 299 257 167 320 ...
+ $ quality    : int  3 3 3 3 3 4 3 4 4 4 ...
+
+ reviewer.id age    skill used.cr.technology
+1           1  51 4.254235                  0
+2           2  55 3.739723                  0
+3           3  49 4.457738                  0
+4           4  38 3.827274                  0
+5           5  44 4.184495                  0
+6           6  27 2.657038                  1
+
+reviewer.id review.id complexity result extent quality
+1           1       623  0.3669993      1    229       3
+2           1      1381  0.4899597      1    184       3
+3           1       673 -1.3968369      0    126       3
+4           1       136  0.5453157      0    183       3
+5           1        35 -0.8819071      0    169       3
+6           1       749  0.9185690      1    179       4
+
+```{r}
+join_key <- intersect(names(reviewers), names(reviews))
+if (!length(join_key)) stop("No shared key between reviewers and reviews. Please align id column(s).")
+d <- reviews %>% left_join(reviewers, by = join_key)
+
+col_map <- list(
+  extent = c("extent", "length", "review_length", "time_spent"),
+  quality = c("quality", "clarity", "score"),
+  result = c("result", "approved", "accept"),
+  complexity = c("complexity", "change_complexity"),
+  used_ai = c("used.cr.technology", "used_ai", "AI", "ai_user", "used_cr_technology"),
+  age = c("age", "reviewer_age"),
+  skill = c("skill", "reviewer_skill")
+)
+```
+
+```{r}
+data_list <- list(
+  extent = d$extent,
+  skill = standardize(d$skill),
+  complexity = standardize(d$complexity),
+  used_cr_tech = d$used.cr.technology,
+  age = standardize(d$age)
+)
+
+m_extent <- ulam(
+  alist(
+    extent ~ dnorm(mu, sigma),
+    mu <- a + b_skill*skill + b_complexity*complexity +
+           b_ai*used_cr_tech + b_age*age,
+    a ~ dnorm(0, 1),
+    c(b_skill, b_complexity, b_ai, b_age) ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+  ), data=data_list, chains=4, cores=4
+)
+
+m_quality <- ulam(
+  alist(
+    quality ~ dnorm(mu, sigma),
+    mu <- a + b_skill*skill + b_complexity*complexity +
+           b_ai*used_cr_tech + b_age*age,
+    a ~ dnorm(0, 1),
+    c(b_skill, b_complexity, b_ai, b_age) ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+  ), data=data_list, chains=4, cores=4
+)
+
+m_result <- ulam(
+  alist(
+    result ~ dbinom(1, p),
+    logit(p) <- a + b_extent*extent + b_quality*quality + b_ai*used_cr_tech,
+    a ~ dnorm(0, 1),
+    c(b_extent, b_quality, b_ai) ~ dnorm(0, 1)
+  ), data=data_list, chains=4, cores=4
+)
+```
+
+```{r}
+precis(m_extent)
+precis(m_quality)
+precis(m_result)
+
+compare(m_extent, m_quality, m_result, func=PSIS)
+```
+
+dat <- reviews %>%
+  inner_join(reviewers, by = "reviewer.id") %>%
+  mutate(
+    used = as.integer(used.cr.technology),      # 0/1
+    extent_log = log1p(extent),                 # positive -> log1p
+    # z-scales for continuous predictors
+    complexity_z = as.numeric(scale(complexity)),
+    skill_z      = as.numeric(scale(skill)),
+    age_z        = as.numeric(scale(age)),
+    extent_z     = as.numeric(scale(extent_log)),
+    quality_int  = as.integer(quality),         # 1..5
+    quality_z    = as.numeric(scale(quality))   # for result model convenience
+  )
+
+# Small sanity plots (Task 2)
+ggplot(dat, aes(x=factor(used), y=quality)) + geom_boxplot()
+ggplot(dat, aes(x=complexity_z, y=extent_log, color=factor(result))) + geom_point(alpha=.4)
+
+# ====== PRIORS: prior predictive checks ======
+# 1) Extent model (Gaussian on log-extent)
+dat_ext <- list(
+  N = nrow(dat),
+  used = dat$used,
+  complexity = dat$complexity_z,
+  skill = dat$skill_z,
+  age = dat$age_z
+)
+
+m_ext_prior <- ulam(
+  alist(
+    extent_log ~ dnorm(mu, sigma),
+    mu <- a + bU*used + bC*complexity + bS*skill + bA*age,
+    a  ~ dnorm(0, 1.5),
+    c(bU, bC, bS, bA) ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ),
+  data = c(dat_ext, list(extent_log = dat$extent_log)),
+  chains = 1, iter = 1000, sample = "prior"
+)
+# Check implied extent distribution:
+postcheck(m_ext_prior)  # should broadly cover log-length range
+
+# 2) Quality model (ordered logistic)
+# rethinking uses ordered_logistic() with cutpoints
+dat_qual <- list(
+  N = nrow(dat),
+  K = 5,
+  used = dat$used,
+  complexity = dat$complexity_z,
+  skill = dat$skill_z,
+  age = dat$age_z,
+  extent = dat$extent_z,
+  quality = dat$quality_int
+)
+
+m_qual_prior <- ulam(
+  alist(
+    quality ~ ordered_logistic(eta, cutpoints),
+    eta <- a + bU*used + bC*complexity + bS*skill + bA*age + bE*extent,
+    a ~ dnorm(0, 1.5),
+    c(bU, bC, bS, bA, bE) ~ dnorm(0, 0.5),
+    cutpoints ~ dnorm(0,1)
+  ),
+  data = dat_qual,
+  chains = 1, iter = 1000, sample = "prior"
+)
+# No postcheck for ordered directly, but check range of eta:
+precis(m_qual_prior)
+
+# 3) Result model (binomial/logit)
+dat_res <- list(
+  N = nrow(dat),
+  result = dat$result,
+  used = dat$used,
+  extent = dat$extent_z,
+  quality = dat$quality_z
+)
+
+m_res_prior <- ulam(
+  alist(
+    result ~ dbinom(1, p),
+    logit(p) <- a + bQ*quality + bE*extent + bU*used,
+    a ~ dnorm(0, 1.5),
+    c(bQ, bE, bU) ~ dnorm(0, 0.5)
+  ),
+  data = dat_res,
+  chains = 1, iter = 1000, sample = "prior"
+)
+precis(m_res_prior)
+
+# ====== FIT MODELS (posterior) ======
+m_ext <- ulam(
+  alist(
+    extent_log ~ dnorm(mu, sigma),
+    mu <- a + bU*used + bC*complexity + bS*skill + bA*age,
+    a  ~ dnorm(0, 1.5),
+    c(bU, bC, bS, bA) ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ),
+  data = c(dat_ext, list(extent_log = dat$extent_log)),
+  chains = 4, cores = 4, iter = 4000, log_lik = TRUE
+)
+
+m_qual <- ulam(
+  alist(
+    quality ~ ordered_logistic(eta, cutpoints),
+    eta <- a + bU*used + bC*complexity + bS*skill + bA*age + bE*extent,
+    a ~ dnorm(0, 1.5),
+    c(bU, bC, bS, bA, bE) ~ dnorm(0, 0.5),
+    cutpoints ~ dnorm(0,1)
+  ),
+  data = dat_qual,
+  chains = 4, cores = 4, iter = 4000, log_lik = TRUE
+)
+
+m_res <- ulam(
+  alist(
+    result ~ dbinom(1, p),
+    logit(p) <- a + bQ*quality + bE*extent + bU*used,
+    a ~ dnorm(0, 1.5),
+    c(bQ, bE, bU) ~ dnorm(0, 0.5)
+  ),
+  data = dat_res,
+  chains = 4, cores = 4, iter = 4000, log_lik = TRUE
+)
+
+# ====== DIAGNOSTICS ======
+precis(m_ext, 2);  trankplot(m_ext);  traceplot(m_ext)
+precis(m_qual, 2); trankplot(m_qual); traceplot(m_qual)
+precis(m_res, 2);  trankplot(m_res);  traceplot(m_res)
+
+# quick helpers:
+max(abs(coef(m_ext)$Rhat - 1))
+max(abs(coef(m_qual)$Rhat - 1))
+max(abs(coef(m_res)$Rhat - 1))
+
+# ====== POSTERIOR PREDICTIVE CHECKS ======
+postcheck(m_ext)   # should resemble log-extent distribution
+# For ordered quality, inspect cutpoints & fitted category probs
+post <- extract.samples(m_qual)
+summary(post$cutpoints)
+
+# ====== (Optional) MODEL VARIANTS + PSIS-LOO ======
+# e.g., compare extent models with/without skill to see confounding
+m_ext_noskill <- ulam(
+  alist(
+    extent_log ~ dnorm(mu, sigma),
+    mu <- a + bU*used + bC*complexity + bA*age,
+    a ~ dnorm(0,1.5),
+    c(bU,bC,bA) ~ dnorm(0,0.5),
+    sigma ~ dexp(1)
+  ),
+  data = c(dat_ext, list(extent_log = dat$extent_log)),
+  chains = 4, cores = 4, iter = 3000, log_lik = TRUE
+)
+
+compare(m_ext, m_ext_noskill, func = PSIS)  # lower = better predictive
 
 ```{r data-prep}
 # reviewers <- read.csv("Assignments/reviewers.csv")
