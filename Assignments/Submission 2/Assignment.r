@@ -6,91 +6,101 @@
 # --- packages
 library(rethinking)   # ulam, standardize, precis, PSIS/WAIC helpers
 library(tidyverse)
+library(ggplot2)
 
 # --- load data
 reviewers <- read.csv("Assignments/reviewers.csv", stringsAsFactors = FALSE)
 reviews <- read.csv("Assignments/reviews.csv", stringsAsFactors = FALSE)
+str(reviewers)
+str(reviews)
+head(reviewers)
+head(reviews)
 
 # --- try a sensible merge (adjust if needed)
-common <- intersect(names(reviews), names(reviewers))
-key <- dplyr::case_when(
-  "reviewer_id" %in% common ~ "reviewer_id",
-  "reviewer"    %in% common ~ "reviewer",
-  TRUE ~ common[grepl("id|reviewer", tolower(common))][1]
+df <- reviews %>% left_join(reviewers, by = "reviewer.id")
+
+# Alternative: inner join to keep only matched rows
+# dat <- reviews %>%
+#   inner_join(reviewers, by = "reviewer.id") %>%
+#   mutate(
+#     used = as.integer(used.cr.technology),      # 0/1
+#     extent_log = log1p(extent),                 # positive -> log1p
+#     # z-scales for continuous predictors
+#     complexity_z = as.numeric(scale(complexity)),
+#     skill_z      = as.numeric(scale(skill)),
+#     age_z        = as.numeric(scale(age)),
+#     extent_z     = as.numeric(scale(extent_log)),
+#     quality_int  = as.integer(quality),         # 1..5
+#     quality_z    = as.numeric(scale(quality))   # for result model convenience
+#   )
+
+# Alternative: try common id-like columns
+# common <- intersect(names(reviews), names(reviewers))
+# key <- dplyr::case_when(
+#   "reviewer_id" %in% common ~ "reviewer_id",
+#   "reviewer"    %in% common ~ "reviewer",
+#   TRUE ~ common[grepl("id|reviewer", tolower(common))][1]
+# )
+# if (!is.na(key) && !is.null(key)) {
+#   df <- left_join(reviews, reviewers, by = key)
+# } else {
+#   df <- reviews
+# }
+
+# Rename to match DAG (adapt to your real column names!)
+df <- df %>%
+  rename(
+    age        = age,                 # reviewer age
+    skill      = skill,               # reviewer skill/expertise
+    complexity = complexity,          # change complexity
+    used       = used.cr.technology,  # AI usage (0/1)
+    extent     = extent,              # review length / duration
+    quality    = quality,             # quality score
+    result     = result               # approval (0/1)
+  )
+
+# Coerce binaries and standardize predictors (z = (x-mean)/sd)
+df <- df %>%
+  mutate(
+    used   = as.integer(used),
+    result = as.integer(result),
+    z_age        = as.numeric(scale(age)),
+    z_skill      = as.numeric(scale(skill)),
+    z_complexity = as.numeric(scale(complexity)),
+    z_extent     = as.numeric(scale(extent)),
+    z_quality    = as.numeric(scale(quality))
+  )
+
+
+summary(df[,c("age","skill","complexity","extent","quality")])
+table(used = df$used, result = df$result)
+
+ggplot(df, aes(x=factor(used))) + geom_bar() + labs(x="AI used", y="Count")
+ggplot(df, aes(x=factor(result))) + geom_bar() + labs(x="Approval", y="Count")
+ggplot(df, aes(z_complexity, z_extent)) + geom_point(alpha=.3) + geom_smooth(method="lm", se=FALSE)
+ggplot(df, aes(z_skill, z_quality)) + geom_point(alpha=.3) + geom_smooth(method="lm", se=FALSE)
+
+
+library(rethinking)
+
+# EXTENT
+dl_extent <- list(
+  extent = as.numeric(scale(d$extent)),
+  age = d$z_age, skill = d$z_skill,
+  complexity = d$z_complexity, used = d$used
 )
-if (!is.na(key) && !is.null(key)) {
-  d <- left_join(reviews, reviewers, by = key)
-} else {
-  d <- reviews
-}
 
-# --- lowercase, snake_case to make life easier
-names(d) <- names(d) |> tolower() |> gsub("\\s+", "_", x = _)
-
-# ===============================
-# 🧭 mapping your columns to the DAG
-# ===============================
-# If these guesses look wrong on your data, set them manually, e.g.:
-# age_col      <- "age_years"
-# skill_col    <- "skill"
-# complexity_col <- "complexity"
-# ai_col       <- "used.cr.technology"  # 0/1 (or factor we will coerce)
-# extent_col   <- "extent"              # length/time tokens/words/etc.
-# quality_col  <- "quality"             # 1..5 ordinal
-# result_col   <- "result"              # approved vs discarded
-
-guess <- function(patterns) {
-  # find first column containing all substrings in 'patterns'
-  ix <- which(vapply(names(d), function(nm){
-    all(vapply(patterns, function(p) grepl(p, nm, ignore.case = TRUE), logical(1)))
-  }, logical(1)))
-  if (length(ix)) names(d)[ix[1]] else NA_character_
-}
-
-age_col        <- guess(c("age"))
-skill_col      <- guess(c("skill"))
-complexity_col <- guess(c("complex"))
-ai_col         <- guess(c("used","cr")) %||% guess(c("ai","used")) %||% guess(c("tech","used"))
-extent_col     <- guess(c("extent")) %||% guess(c("length")) %||% guess(c("time"))
-quality_col    <- guess(c("quality")) %||% guess(c("clarity"))
-result_col     <- guess(c("result")) %||% guess(c("approve")) %||% guess(c("decision","status"))
-
-# If any of these are NA, set explicitly here:
-# age_col        <- age_col        %||% "age"
-# skill_col      <- skill_col      %||% "skill"
-# complexity_col <- complexity_col %||% "complexity"
-# ai_col         <- ai_col         %||% "used_cr_technology"
-# extent_col     <- extent_col     %||% "extent"
-# quality_col    <- quality_col    %||% "quality"
-# result_col     <- result_col     %||% "result"
-
-`%||%` <- function(a,b) if(!is.null(a) && !is.na(a) && nzchar(a)) a else b
-
-message("Detected columns:")
-print(list(age=age_col, skill=skill_col, complexity=complexity_col,
-           ai=ai_col, extent=extent_col, quality=quality_col, result=result_col))
-
-# --- basic coercions
-if (!is.na(ai_col)) {
-  d[[ai_col]] <- d[[ai_col]] |>
-    tolower() |>
-    dplyr::recode("yes"="1","true"="1","y"="1","ai"="1","used"="1",
-                  "no"="0","false"="0","n"="0","not_used"="0",
-                  .default=as.character(d[[ai_col]])) |>
-    as.numeric()
-}
-
-if (!is.na(result_col)) {
-  d[[result_col]] <- tolower(as.character(d[[result_col]]))
-  d[[result_col]] <- dplyr::recode(d[[result_col]],
-     "approved"="1","approve"="1","accepted"="1","accept"="1","merged"="1","kept"="1","true"="1","yes"="1",
-     "rejected"="0","reject"="0","discarded"="0","discard"="0","removed"="0","false"="0","no"="0",
-     .default=d[[result_col]])
-  # if still not 0/1, fall back to numeric/coerce
-  if (!all(unique(na.omit(d[[result_col]])) %in% c("0","1"))) {
-    d[[result_col]] <- as.numeric(as.factor(d[[result_col]])) - 1 # map to {0,1}
-  } else d[[result_col]] <- as.numeric(d[[result_col]])
-}
+m_extent_prior <- ulam(
+  alist(
+    extent ~ dnorm(mu, sigma),
+    mu <- a + b_age*age + b_skill*skill + b_complexity*complexity + b_used*used,
+    a ~ dnorm(0, 1),
+    c(b_age, b_skill, b_complexity, b_used) ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ),
+  data = dl_extent, chains=1, iter=500, sample=TRUE, dofit=FALSE
+)
+# Prior predictive: simulate with extract.prior() then link()
 
 # --- keep a modeling frame
 keep <- c(age_col, skill_col, complexity_col, ai_col, extent_col, quality_col, result_col)
@@ -104,6 +114,7 @@ df <- d |> dplyr::select(all_of(keep)) |> dplyr::rename(
   quality= !!quality_col,
   result = !!result_col
 )
+
 
 # --- coerce numerics + handle ordinal quality
 numify <- function(x) suppressWarnings(as.numeric(x))
@@ -128,10 +139,21 @@ if ("quality" %in% names(df)) {
 # --- drop rows with missing essentials per model later
 summary(df)
 
+# --- prepare data list for modeling
+data_list <- list(
+  extent = d$extent,
+  skill = standardize(d$skill),
+  complexity = standardize(d$complexity),
+  used_cr_tech = d$used.cr.technology,
+  age = standardize(d$age)
+)
+
 # ============================================================
 # 1) EXTENT model: Normal (identity link)
 #    mu = a + b_skill*skill + b_complexity*complexity + b_ai*AI + b_age*age
 # ============================================================
+
+
 d_extent <- df |> dplyr::select(extent, skill, complexity, AI, age) |> na.omit()
 dat1 <- list(
   extent = d_extent$extent,

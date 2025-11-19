@@ -263,7 +263,7 @@ Normalize extent/quality where helpful; keep raw scales visible for interpretabi
 ```
 
 Load files:
-```{r descriptives, fig.height=5, fig.width=7}
+```{r , fig.height=5, fig.width=7}
 reviewers <- read_csv("Assignments/reviewers.csv")
 reviews   <- read_csv("Assignments/reviews.csv")
 
