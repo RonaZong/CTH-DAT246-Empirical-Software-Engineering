@@ -1,0 +1,300 @@
+---
+title: "Assignment: AI-assisted Code Reviews"
+author: "Xingrong Zong"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Assignment: AI-assisted Code Reviews
+
+DAG 2:
+dag {
+bb="0,0,1,1"
+AI [pos="0.200,0.700"]
+Age [pos="0.200,0.200"]
+Complexity [pos="0.600,0.350"]
+Extent [pos="0.600,0.200"]
+Quality [pos="0.600,0.500"]
+Result [pos="0.800,0.700"]
+Skill [pos="0.400,0.200"]
+AI -> Extent
+AI -> Quality
+AI -> Result
+Age -> AI
+Age -> Skill
+Complexity -> AI
+Complexity -> Extent
+Complexity -> Quality
+Extent -> Result
+Quality -> Result
+Skill -> AI
+Skill -> Extent
+Skill -> Quality
+}
+
+```{r descriptives, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+reviewers <- read.csv("Assignments/reviewers.csv", stringsAsFactors = FALSE)
+reviews <- read.csv("Assignments/reviews.csv", stringsAsFactors = FALSE)
+str(reviewers)
+str(reviews)
+head(reviewers)
+head(reviews)
+```
+
+```{r merge-data, message=FALSE, warning=FALSE}
+d <- reviews %>%
+  left_join(reviewers, by = "reviewer.id")
+
+glimpse(d)
+```
+
+## Task 2: Descriptive statistics and visualizations
+```{r analyze-data, message=FALSE, warning=FALSE}
+# 1) Distribution of AI usage (U)
+ggplot(d, aes(x = factor(used.cr.technology))) +
+  geom_bar() +
+  labs(
+    x = "AI usage (0 = no, 1 = yes)",
+    y = "Number of reviews",
+    title = "Distribution of AI-assisted vs non-AI reviews"
+  )
+```
+
+```{r analyze-data-2, message=FALSE, warning=FALSE}
+# 2) Distribution of extent (E)
+ggplot(d, aes(x = extent)) +
+  geom_histogram(bins = 30) +
+  labs(
+    x = "Extent (number of characters)",
+    y = "Count",
+    title = "Distribution of review extent"
+  )
+```
+
+```{r analyze-data-3, message=FALSE, warning=FALSE}
+# 3) Distribution of quality (Q)
+ggplot(d, aes(x = factor(quality))) +
+  geom_bar() +
+  labs(
+    x = "Quality rating (1–5)",
+    y = "Number of reviews",
+    title = "Distribution of expert quality ratings"
+  )
+```
+
+```{r analyze-data-4, message=FALSE, warning=FALSE}
+# 4) Optional: Relationship between complexity and extent, without regression line
+ggplot(d, aes(x = complexity, y = extent)) +
+  geom_point(alpha = 0.4) +
+  labs(
+    x = "Complexity (standardized)",
+    y = "Extent (characters)",
+    title = "Complexity vs. review extent (descriptive scatter)"
+  )
+```
+
+## Task 3: Bayesian regression models
+```{r}
+library(rethinking)
+
+# Standardize background variables
+d$age_z   <- scale(d$age)
+d$skill_z <- scale(d$skill)
+d$comp_z  <- scale(d$complexity)
+```
+
+```{r models, message=FALSE, warning=FALSE}
+# Exponential model for extent
+dat_extent <- list(
+  E = d$extent,
+  U = d$used.cr.technology,
+  A = as.numeric(d$age_z),
+  S = as.numeric(d$skill_z),
+  C = as.numeric(d$comp_z),
+  N = nrow(d)
+)
+
+m_extent <- ulam(
+  alist(
+    E ~ dexp(lambda),
+    log(lambda) <- aE + bEU*U + bEA*A + bES*S + bEC*C,
+    aE  ~ dnorm(0, 1),
+    c(bEU, bEA, bES, bEC) ~ dnorm(0, 0.5)
+  ),
+  data = dat_extent,
+  chains = 4, cores = 4
+)
+```
+All 4 chains finished successfully.
+Mean chain execution time: 10.0 seconds.
+Total execution time: 10.5 seconds.
+
+```{r models-2, message=FALSE, warning=FALSE}
+# Ordered logistic model for quality
+dat_quality <- list(
+  Q = d$quality,
+  U = d$used.cr.technology,
+  A = as.numeric(d$age_z),
+  S = as.numeric(d$skill_z),
+  C = as.numeric(d$comp_z),
+  N = nrow(d)
+)
+
+m_quality <- ulam(
+  alist(
+    Q ~ dordlogit(phi, cutpoints),
+    phi <- aQ + bQU*U + bQA*A + bQS*S + bQC*C,
+    aQ  ~ dnorm(0, 1),
+    c(bQU, bQA, bQS, bQC) ~ dnorm(0, 0.5),
+    cutpoints ~ dnorm(0, 1.5)
+  ),
+  data = dat_quality,
+  chains = 4, cores = 4
+)
+```
+All 4 chains finished successfully.
+Mean chain execution time: 787.7 seconds.
+Total execution time: 804.6 seconds.
+
+## Task 4: Prior predictive checks
+```{r prior-check, message=FALSE, warning=FALSE}
+# PRIOR predictive for extent
+# m_extent_prior <- ulam(
+#   alist(
+#     E ~ dexp(lambda),
+#     log(lambda) <- aE + bEU*U + bEA*A + bES*S + bEC*C,
+#     aE  ~ dnorm(0, 1),
+#     c(bEU, bEA, bES, bEC) ~ dnorm(0, 0.5)
+#   ),
+#   data = dat_extent,
+#   chains = 1, cores = 1,
+#   sample_prior = TRUE,
+#   iter = 2000
+# )
+
+mu0 <- mean(d$extent)
+m_extent_prior <- ulam(
+  alist(
+    E ~ dexp(lambda),
+    lambda <- 1/mu,
+    log(mu) <- a_mu + bU*U + bA*A + bS*S + bC*C,
+    a_mu ~ dnorm(log(mu0), 0.5),
+    c(bU, bA, bS, bC) ~ dnorm(0, 0.5)
+  ),
+  data = dat_extent,
+  chains = 1, cores = 1,
+  sample_prior = TRUE,
+  iter = 2000
+)
+
+# Simulate prior predictive extent
+yrep_extent <- sim(m_extent_prior, data = dat_extent, n = 1000)
+yrep_extent <- as.vector(yrep_extent)
+# apply(yrep_extent, 1, median) |> hist(main="Prior predictive medians")
+
+par(mfrow = c(1,2))
+hist(d$extent, breaks = 30, main = "Observed extent", xlab = "extent (characters)")
+hist(yrep_extent, breaks = 30, main = "Prior predictive extent", xlab = "extent (characters)")
+par(mfrow = c(1,1))
+```
+
+```{r prior-check-2, message=FALSE, warning=FALSE}
+# PRIOR predictive for quality (ordered logistic)
+m_quality_prior <- ulam(
+  alist(
+    Q ~ dordlogit(phi, cutpoints),
+    phi <- aQ + bQU*U + bQA*A + bQS*S + bQC*C,
+    aQ  ~ dnorm(0, 1),
+    c(bQU, bQA, bQS, bQC) ~ dnorm(0, 0.5),
+    cutpoints ~ dnorm(0, 1.5)
+  ),
+  data = dat_quality,
+  chains = 1, cores = 1,
+  sample_prior = TRUE,
+  iter = 2000
+)
+
+# Prior predictive draws for quality (ordinal 1..5)
+yrep_quality <- sim(m_quality_prior, data = dat_quality, n = 2000)
+yrep_quality <- as.vector(yrep_quality)
+
+# Compare marginal distributions (Observed vs Prior predictive)
+obs_tab   <- table(factor(d$quality, levels = 1:5))
+prior_tab <- table(factor(yrep_quality, levels = 1:5))
+
+obs_prop   <- obs_tab / sum(obs_tab)
+prior_prop <- prior_tab / sum(prior_tab)
+
+barplot(
+  rbind(obs_prop, prior_prop),
+  beside = TRUE,
+  legend.text = c("Observed", "Prior predictive"),
+  names.arg = 1:5,
+  main = "Quality: observed vs prior predictive",
+  xlab = "quality (1–5)",
+  ylab = "proportion"
+)
+```
+
+## Task 5: Model diagnostics and posterior predictive checks
+```{r diagnostics, message=FALSE, warning=FALSE}
+# Summaries
+precis(m_extent, 2)
+precis(m_quality, 2)
+
+# Trace plots
+traceplot(m_extent)
+traceplot(m_quality)
+
+# stanfit extraction (works for most ulam models)
+sf_extent  <- m_extent$stanfit
+sf_quality <- m_quality$stanfit
+
+# Rhat and neff ratio
+max(rhat(sf_extent))
+min(neff_ratio(sf_extent))
+
+max(rhat(sf_quality))
+min(neff_ratio(sf_quality))
+
+```
+max(rhat(m_extent$stanfit))
+min(neff_ratio(m_extent$stanfit))
+
+```{r}
+library(rstan)
+
+sum(sapply(get_sampler_params(m_extent$stanfit, inc_warmup = FALSE),
+           function(x) x[,"divergent__"]))
+
+sum(sapply(get_sampler_params(m_quality$stanfit, inc_warmup = FALSE),
+           function(x) x[,"divergent__"]))
+
+# # Check Rhat and n_eff manually
+# library(coda)
+# extent_chains  <- extract.samples(m_extent, as.matrix = TRUE)
+# quality_chains <- extract.samples(m_quality, as.matrix = TRUE)
+
+# # rethinking already prints Rhat and n_eff in precis(); use that in your report.
+# max(rhat(m_extent@stanfit))
+# min(neff_ratio(m_extent@stanfit))
+
+# max(rhat(m_quality@stanfit))
+# min(neff_ratio(m_quality@stanfit))
+```
+
+```{r}
+# Numerical diagnostics
+precis(m_extent, depth = 2)
+
+# Trace plots
+traceplot(m_extent)
+
+# Numerical diagnostics
+precis(m_quality, depth = 2)
+
+# Trace plots
+traceplot(m_quality)
+```
